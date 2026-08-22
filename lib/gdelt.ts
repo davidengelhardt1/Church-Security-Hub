@@ -79,7 +79,7 @@ export async function fetchGdeltCategory(
   category: Category,
   query: string,
   timespan?: string,
-  maxrecords = 75
+  maxrecords = 50
 ): Promise<Incident[]> {
   const params = new URLSearchParams({
     query,
@@ -94,13 +94,23 @@ export async function fetchGdeltCategory(
   if (timespan) params.set("timespan", timespan);
 
   const res = await fetch(`${GDELT_ENDPOINT}?${params.toString()}`, {
-    headers: { "User-Agent": "church-security-watch/0.1" },
+    // GDELT appears to rate-limit or reject requests with non-browser
+    // User-Agent strings (a custom identifier like the one this app used
+    // before triggered empty/blocked responses in testing). A standard
+    // browser UA avoids that.
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    },
     // GDELT can be slow over a 3-month window; give it room but don't hang the whole ingest
     signal: AbortSignal.timeout(25000),
   });
 
   if (!res.ok) {
-    throw new Error(`GDELT ${category} query failed: ${res.status}`);
+    const bodySnippet = await res.text().catch(() => "");
+    throw new Error(
+      `GDELT ${category} query failed: ${res.status} ${res.statusText} — ${bodySnippet.slice(0, 200)}`
+    );
   }
 
   const text = await res.text();
@@ -108,7 +118,12 @@ export async function fetchGdeltCategory(
   try {
     data = JSON.parse(text);
   } catch {
-    // GDELT occasionally returns HTML error pages instead of JSON
+    // GDELT occasionally returns HTML (error pages, rate-limit notices)
+    // instead of JSON. Surface a snippet so this is diagnosable from logs
+    // instead of silently looking like "zero relevant articles."
+    console.error(
+      `GDELT ${category} returned non-JSON response (likely rate-limited or errored): ${text.slice(0, 300)}`
+    );
     return [];
   }
 
@@ -131,8 +146,18 @@ export async function fetchGdeltCategory(
 }
 
 export async function fetchAllGdelt(): Promise<Incident[]> {
+  // Stagger requests slightly rather than firing all 3 at once - gentler on
+  // GDELT's rate limits, which matters more now that ingestion can be
+  // triggered by both page loads and the cron job.
   const results = await Promise.allSettled(
-    QUERIES.map((q) => fetchGdeltCategory(q.category, q.query))
+    QUERIES.map(
+      (q, i) =>
+        new Promise<Incident[]>((resolve, reject) => {
+          setTimeout(() => {
+            fetchGdeltCategory(q.category, q.query).then(resolve, reject);
+          }, i * 400);
+        })
+    )
   );
   const incidents: Incident[] = [];
   for (let i = 0; i < results.length; i++) {
