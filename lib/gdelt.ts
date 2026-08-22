@@ -13,21 +13,22 @@ interface GdeltArticle {
 
 // One query per category. Keep queries tight (GDELT's boolean syntax is picky
 // about parens/quotes) so results stay relevant instead of flooding with noise.
+// IMPORTANT: GDELT rejects queries past a certain length with a bare
+// "Your query was too short or too long" HTML page (not JSON), which reads
+// downstream as "zero results." An earlier version of this file used long
+// OR-lists here and silently returned nothing. Keep these SHORT.
 const QUERIES: { category: Category; query: string }[] = [
   {
     category: "physical",
-    query:
-      '(church OR synagogue OR mosque OR "house of worship" OR "place of worship" OR temple OR cathedral OR chapel OR parish) (shooting OR gunman OR stabbing OR "bomb threat" OR attack OR shooter OR burglary OR "break-in" OR robbery OR theft OR stolen OR vandalism OR arson OR threat OR evacuated OR lockdown OR intruder)',
+    query: '(church OR synagogue OR mosque) (shooting OR attack OR stabbing)',
   },
   {
     category: "extremism",
-    query:
-      '("hate crime" OR extremist OR "white supremacist" OR antisemitic OR islamophobic OR "domestic terrorism" OR "neo-nazi") (church OR synagogue OR mosque OR "religious site" OR congregation OR temple OR gurdwara)',
+    query: '(church OR synagogue OR mosque) ("hate crime" OR extremist)',
   },
   {
     category: "cyber",
-    query:
-      '(church OR synagogue OR mosque OR parish OR diocese OR congregation OR "religious organization" OR nonprofit OR charity OR ministry) (cyberattack OR ransomware OR "data breach" OR hacked OR phishing OR fraud OR scam OR "wire fraud" OR breach OR cybercrime)',
+    query: '(church OR diocese OR nonprofit) (ransomware OR "data breach")',
   },
 ];
 
