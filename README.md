@@ -1,87 +1,196 @@
 # Watch Board — Church Security Dashboard
 
-A live situational-awareness dashboard for a church security team: tracks
-violence at houses of worship, extremist/hate-crime activity near
-congregations, and cyberattacks on churches/nonprofits, pulled from free
-public sources.
+A live situational-awareness dashboard for a church security team. It
+aggregates physical-security incidents at houses of worship, extremist and
+hate-crime activity targeting religious sites, and cyber threats relevant to
+churches and small nonprofits — all from free public sources, with no paid
+API keys.
 
-## Data sources (all free, no paid keys required)
+Built because our security team had no practical way to see what was
+happening at houses of worship elsewhere.
 
-- **GDELT DOC 2.0 API** — global news search, updated every 15 min, no key.
-  Covers the "violence" and "extremism" categories.
-- **CISA Cybersecurity Advisories** feed — US government cyber advisories.
-- **CIS / MS-ISAC Advisories** feed — nonprofit-relevant cyber threats.
+**Live:** https://church-security-hub.vercel.app
 
-Each incident is auto-tagged with a severity (high/medium/low) using a
-keyword lexicon in `lib/classify.ts` — tune that file as you see false
-positives/negatives.
+<!-- Add a screenshot here before sharing publicly:
+![Watch Board](docs/screenshot.png)
+-->
 
-**Known limitation:** GDELT's DOC API returns a source *country*, not
-coordinates, so v1 doesn't have a literal map — it's a filterable log. Adding
-a map is a reasonable next step (see "Next steps" below).
+---
 
-## Quickstart (local)
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| Framework | Next.js 14 (App Router), React, TypeScript |
+| Hosting | Vercel (auto-deploy on push to `main`) |
+| Persistence | Supabase / Postgres — **optional** |
+| Scheduling | Vercel Cron → `/api/ingest` |
+| Parsing | `fast-xml-parser` for RSS |
+
+No paid services. The whole thing runs on free tiers.
+
+---
+
+## How the feeds work together
+
+Three independent public sources are normalized into a single `Incident`
+shape (`lib/types.ts`) and served from one endpoint, `/api/events`.
+
+**1. Google News RSS** — `lib/googlenews.ts` (primary source)
+About 20 short, targeted searches rather than one broad query: `church
+arson`, `synagogue attack`, `diocese cyberattack`, and so on. Keyless, no
+boolean-syntax quirks, no query-length ceiling. Each search is scoped to the
+last 90 days.
+
+**2. GDELT DOC 2.0** — `lib/gdelt.ts` (supplement)
+Global news index covering 100+ languages. Keyless. Used to catch
+international incidents that Google News may not surface. Queries are kept
+deliberately short here — see [Notes on GDELT](#notes-on-gdelt).
+
+**3. CIS / MS-ISAC advisories** — `lib/feeds.ts` (cyber)
+Standard RSS. Capped to the last 90 days and 20 items per feed, because
+these publish every vendor patch bulletin and will otherwise bury everything
+else on the board.
+
+### The pipeline
+
+```
+fetch all sources in parallel  (Promise.allSettled)
+        ↓
+classify severity              (lib/classify.ts — keyword lexicon)
+        ↓
+verify relevance               (regex re-check, see below)
+        ↓
+deduplicate                    (by URL, then by normalized title)
+        ↓
+sort by publish date → single JSON array
+```
+
+Two design decisions worth calling out:
+
+**Sources fail independently.** Everything runs through
+`Promise.allSettled`, so a dead or slow feed degrades the board instead of
+breaking it.
+
+**Relevance is re-verified locally.** Search APIs return loosely-matched
+results — early versions surfaced a Frank Sinatra anniversary concert under
+"cyber." So upstream results are treated as a candidate pool, and each title
+must independently match both a religious-context term *and* a
+category-appropriate incident term (`isRelevant()` in `lib/gdelt.ts`) before
+it reaches the board.
+
+---
+
+## Quickstart
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000 — it'll fetch live data immediately, no setup
-required. Without Supabase configured, every page load re-fetches from
-GDELT/RSS directly (fine for a small team checking in periodically; see
-below if you want it always-fresh in the background).
+Open http://localhost:3000. It fetches live data immediately — no
+configuration, no API keys, no database required.
 
-## Deploying to Vercel
+## Deploying
 
-1. Push this folder to a GitHub repo.
-2. In Vercel: **New Project** → import the repo → it auto-detects Next.js →
-   Deploy. No env vars are required for a working deployment.
-3. Done. Visit the deployed URL.
+1. Push to a GitHub repo.
+2. Vercel → **New Project** → import it. Next.js is auto-detected.
+3. Deploy. No environment variables are required.
 
-## Optional: add persistence + background refresh (Supabase)
+## Optional: persistence and background refresh
 
-Without this, the dashboard re-fetches from GDELT/RSS every time someone
-loads the page — works fine, but there's no history and nothing runs when no
-one's looking at it.
+Without Supabase, the dashboard re-fetches on every page load. That works
+fine for a small team, but there's no history and nothing runs when nobody
+is looking at it.
 
-With Supabase wired up: a Vercel Cron job hits `/api/ingest` every 30
-minutes, stores incidents in Postgres, and the dashboard reads from that
-table (fast, has history, doesn't hammer GDELT on every page view).
+With Supabase configured, Vercel Cron hits `/api/ingest` on a schedule,
+incidents accumulate in Postgres, and the dashboard reads from that table.
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. In the Supabase SQL editor, run `supabase/schema.sql` from this repo.
-3. In Supabase → Project Settings → API, copy the **Project URL** and the
-   **service_role key** (not the anon key — this needs write access).
-4. In Vercel → your project → Settings → Environment Variables, add:
+2. Run `supabase/schema.sql` in the Supabase SQL editor.
+3. From Supabase → Project Settings → API, copy the **Project URL** and the
+   **service_role key** (not the anon key — ingestion needs write access).
+4. In Vercel → Settings → Environment Variables, add:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-   - `CRON_SECRET` — any random string you generate (`openssl rand -hex 16`)
-5. Redeploy. Vercel Cron (already configured in `vercel.json`) will start
-   hitting `/api/ingest` every 30 minutes automatically — no extra setup.
+   - `CRON_SECRET` — any random string (`openssl rand -hex 16`)
+5. Redeploy.
 
-## Tuning it for your church specifically
+> **Vercel Hobby plan note:** cron jobs are limited to once per day. The
+> schedule in `vercel.json` is set to `0 6 * * *` accordingly. A more
+> frequent schedule will cause the deployment to fail with a plan-limit
+> error.
 
-- **Keywords**: `lib/gdelt.ts` has the three search queries. Consider adding
-  your denomination name, city/region, or state to narrow relevance, e.g.
-  appending `("Texas" OR "Dallas")` if hyperlocal signal matters more than
-  national trends.
-- **Severity lexicon**: `lib/classify.ts` — add words specific to patterns
-  you actually care about (e.g. "swatting" already included; add "protest,"
-  "picket," etc. if that's relevant to your context).
-- **Refresh rate**: `REFRESH_MS` in `app/page.tsx` (client polling) and the
-  cron schedule in `vercel.json` (background ingestion).
+---
 
-## Next steps worth considering
+## Tuning it for a specific congregation
 
-- **Map view**: GDELT's separate GEO 2.0 API returns coordinates and could
-  power an actual map layer alongside the log.
-- **Alerting**: a Zapier/Composio webhook off new high-severity rows in
-  Supabase could push to Slack/email/SMS for your team — natural fit given
-  the stack you're already exploring.
-- **AI triage**: an LLM pass (Claude API) over new incidents to write a
-  1-line "why this matters for us" note, instead of just keyword severity.
-- **Denomination-specific sources**: outlets like the Faith Based Security
-  Network or Sheepdog Church Security publish incident roundups that aren't
-  in GDELT's index — worth adding as another RSS source in `lib/feeds.ts` if
-  they publish one.
+- **Searches** — `SEARCHES` in `lib/googlenews.ts`. Add your city, state, or
+  denomination for hyperlocal signal. Keep each query short and specific;
+  many narrow searches outperform one broad one.
+- **Severity lexicon** — `lib/classify.ts`. Add terms that match what your
+  team actually cares about.
+- **Relevance filters** — the regexes in `lib/gdelt.ts` control what's
+  allowed through. Loosen or tighten per category.
+- **Refresh rate** — `REFRESH_MS` in `app/page.tsx` (client polling) and the
+  cron schedule in `vercel.json`.
+
+---
+
+## Notes on GDELT
+
+Documented here because these cost real debugging time.
+
+**Query length is capped.** Long boolean queries are rejected with an HTML
+page reading `Your query was too short or too long` — not JSON, and not an
+HTTP error status. A JSON parser catches the failure and returns an empty
+array, which is indistinguishable from a legitimate zero-result search. This
+silently produced an empty board through several deploys. Keep GDELT queries
+short.
+
+**Boolean logic is unreliable.** Grouped `AND`-of-`OR` queries are not
+consistently respected, which is why relevance is re-verified locally rather
+than trusted from the API.
+
+**User-Agent matters.** Non-browser User-Agent strings have been reported to
+trigger rate limiting. This project sends a standard browser UA.
+
+**The general lesson:** a public API returning `200 OK` with an unexpected
+body is the failure mode to design for. `/api/events` therefore reports
+per-source and per-category counts in its response:
+
+```json
+{
+  "sources": { "googleNews": 41, "gdelt": 12, "cyberFeeds": 20 },
+  "byCategory": { "physical": 28, "extremism": 9, "cyber": 31 }
+}
+```
+
+Which source went quiet is now one request away instead of an afternoon.
+
+---
+
+## Known limitations
+
+- **Coverage is news-dependent.** Incidents that don't get reported online
+  don't appear. This is a monitoring aid, not a comprehensive incident
+  database — no such free, structured source exists for this domain.
+- **Severity is keyword-based**, not semantic. It's a triage hint, not a
+  judgment.
+- **No map view.** GDELT returns source country, not coordinates.
+- **No alerting.** Nobody is notified; someone has to look at the board.
+
+## Possible next steps
+
+- **Alerting** — push high-severity items to SMS, email, or Slack via a
+  webhook off new Supabase rows.
+- **Map view** — GDELT's GEO 2.0 API returns coordinates.
+- **LLM triage** — a short "why this matters for us" note per incident,
+  replacing keyword-only severity.
+- **Denomination-specific sources** — organizations like the Faith Based
+  Security Network publish incident roundups outside mainstream news
+  indexes; add them in `lib/feeds.ts`.
+
+## License
+
+MIT
