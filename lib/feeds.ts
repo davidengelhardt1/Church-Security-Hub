@@ -32,7 +32,10 @@ const MAX_ITEMS_PER_FEED = 20;
 async function fetchOneFeed(name: string, url: string): Promise<Incident[]> {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "church-security-watch/0.1" },
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      },
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return [];
