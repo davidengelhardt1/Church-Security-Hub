@@ -1,4 +1,4 @@
-export type Category = "violence" | "extremism" | "cyber";
+export type Category = "physical" | "extremism" | "cyber";
 export type Severity = "high" | "medium" | "low";
 
 export interface Incident {
