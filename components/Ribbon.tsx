@@ -45,18 +45,7 @@ export function Ribbon({
   );
 
   return (
-    <header
-      style={{
-        borderBottom: "1px solid var(--hairline)",
-        background: "var(--panel)",
-        padding: "18px 24px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        flexWrap: "wrap",
-        gap: 16,
-      }}
-    >
+    <header className="ribbon">
       <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
         <div>
           <h1
@@ -80,7 +69,7 @@ export function Ribbon({
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 28 }}>
+      <div className="ribbon__stats">
         {stat("HIGH", counts.high, "var(--sev-high)")}
         {stat("MED", counts.medium, "var(--sev-medium)")}
         {stat("LOW", counts.low, "var(--sev-low)")}

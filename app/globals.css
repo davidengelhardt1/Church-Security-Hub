@@ -55,3 +55,147 @@ button {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
+
+/* ---------------------------------------------------------------
+   Layout + responsive behaviour
+   The board is desktop-first (it's a watch board), but it needs to
+   be usable on a phone since team members check it on shift.
+   --------------------------------------------------------------- */
+
+html, body {
+  overflow-x: hidden; /* nothing should ever scroll sideways */
+}
+
+.board {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.board__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.board__main {
+  flex: 1;
+  min-width: 0; /* without this, grid children force the flex parent wider */
+}
+
+/* --- Ribbon (header) --- */
+
+.ribbon {
+  border-bottom: 1px solid var(--hairline);
+  background: var(--panel);
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.ribbon__stats {
+  display: flex;
+  gap: 28px;
+}
+
+/* --- Filter rail --- */
+
+.filter-rail {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--hairline);
+  background: var(--panel);
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.filter-rail__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* --- Watch log rows --- */
+
+.watch-row {
+  display: grid;
+  grid-template-columns: 150px 16px 96px 1fr 140px;
+  grid-template-areas: "time sev cat title source";
+  align-items: start;
+  gap: 14px;
+  padding: 12px 24px;
+  text-decoration: none;
+  color: inherit;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.watch-row:nth-child(even) { background: rgba(255, 255, 255, 0.012); }
+.watch-row:hover { background: var(--panel-raised); }
+
+.watch-row__time   { grid-area: time;   padding-top: 2px; }
+.watch-row__sev    { grid-area: sev;    padding-top: 5px; }
+.watch-row__cat    { grid-area: cat;    padding-top: 1px; }
+.watch-row__title  { grid-area: title;  font-size: 14px; line-height: 1.4; }
+.watch-row__source {
+  grid-area: source;
+  text-align: right;
+  padding-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Mobile --- */
+
+@media (max-width: 768px) {
+  /* Sidebar becomes a filter bar above the log */
+  .board__body { flex-direction: column; }
+
+  .filter-rail {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--hairline);
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 16px 20px;
+    padding: 14px 16px;
+  }
+
+  .filter-rail__section { flex: 1 1 auto; min-width: 0; }
+  .filter-rail__section--search { flex-basis: 100%; }
+
+  /* Category/severity toggles sit in a row instead of a column */
+  .filter-rail__group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+
+  /* Each incident becomes a stacked block: metadata line, headline, source */
+  .watch-row {
+    grid-template-columns: auto auto 1fr;
+    grid-template-areas:
+      "sev cat time"
+      "title title title"
+      "source source source";
+    gap: 6px 10px;
+    padding: 14px 16px;
+  }
+
+  .watch-row__time { text-align: right; padding-top: 1px; }
+  .watch-row__sev { padding-top: 4px; }
+  .watch-row__title { font-size: 15px; }
+  .watch-row__source { text-align: left; padding-top: 0; }
+
+  .ribbon { padding: 14px 16px; gap: 12px; }
+  .ribbon__stats { gap: 22px; }
+}
+
+@media (max-width: 400px) {
+  .ribbon__stats { gap: 16px; }
+}
