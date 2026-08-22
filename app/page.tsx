@@ -71,9 +71,9 @@ export default function Page() {
   }, [incidents, activeCategories, activeSeverities, search]);
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div className="board">
       <Ribbon incidents={filtered} fetchedAt={fetchedAt} loading={loading} />
-      <div style={{ display: "flex", flex: 1 }}>
+      <div className="board__body">
         <FilterRail
           activeCategories={activeCategories}
           activeSeverities={activeSeverities}
@@ -82,7 +82,7 @@ export default function Page() {
           search={search}
           onSearch={setSearch}
         />
-        <main style={{ flex: 1, minWidth: 0 }}>
+        <main className="board__main">
           {error && (
             <div
               className="mono"

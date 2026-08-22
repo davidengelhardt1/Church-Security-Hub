@@ -21,7 +21,7 @@ const SEVERITIES: { key: Severity; label: string; color: string }[] = [
   { key: "low", label: "Low", color: "var(--sev-low)" },
 ];
 
-function sectionLabel(text: string) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="mono"
@@ -33,7 +33,7 @@ function sectionLabel(text: string) {
         textTransform: "uppercase",
       }}
     >
-      {text}
+      {children}
     </div>
   );
 }
@@ -46,21 +46,23 @@ export function FilterRail({
   search,
   onSearch,
 }: Props) {
+  const toggleStyle = (active: boolean): React.CSSProperties => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    background: "transparent",
+    border: "none",
+    padding: "4px 0",
+    color: active ? "var(--text-primary)" : "var(--text-dim)",
+    fontSize: 13,
+    textAlign: "left",
+    whiteSpace: "nowrap",
+  });
+
   return (
-    <aside
-      style={{
-        width: 220,
-        flexShrink: 0,
-        borderRight: "1px solid var(--hairline)",
-        background: "var(--panel)",
-        padding: "20px 18px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 26,
-      }}
-    >
-      <div>
-        {sectionLabel("Search")}
+    <aside className="filter-rail">
+      <div className="filter-rail__section filter-rail__section--search">
+        <SectionLabel>Search</SectionLabel>
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
@@ -72,32 +74,24 @@ export function FilterRail({
             borderRadius: 4,
             padding: "8px 10px",
             color: "var(--text-primary)",
-            fontSize: 13,
+            // 16px prevents iOS Safari from auto-zooming on focus
+            fontSize: 16,
             fontFamily: "var(--font-body)",
           }}
         />
       </div>
 
-      <div>
-        {sectionLabel("Category")}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="filter-rail__section">
+        <SectionLabel>Category</SectionLabel>
+        <div className="filter-rail__group">
           {CATEGORIES.map((c) => {
             const active = activeCategories.has(c.key);
             return (
               <button
                 key={c.key}
                 onClick={() => onToggleCategory(c.key)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  background: "transparent",
-                  border: "none",
-                  padding: "4px 0",
-                  color: active ? "var(--text-primary)" : "var(--text-dim)",
-                  fontSize: 13,
-                  textAlign: "left",
-                }}
+                aria-pressed={active}
+                style={toggleStyle(active)}
               >
                 <span
                   style={{
@@ -116,26 +110,17 @@ export function FilterRail({
         </div>
       </div>
 
-      <div>
-        {sectionLabel("Severity")}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="filter-rail__section">
+        <SectionLabel>Severity</SectionLabel>
+        <div className="filter-rail__group">
           {SEVERITIES.map((s) => {
             const active = activeSeverities.has(s.key);
             return (
               <button
                 key={s.key}
                 onClick={() => onToggleSeverity(s.key)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  background: "transparent",
-                  border: "none",
-                  padding: "4px 0",
-                  color: active ? "var(--text-primary)" : "var(--text-dim)",
-                  fontSize: 13,
-                  textAlign: "left",
-                }}
+                aria-pressed={active}
+                style={toggleStyle(active)}
               >
                 <span
                   style={{

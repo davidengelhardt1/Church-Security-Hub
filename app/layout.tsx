@@ -1,9 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Watch Board · Church Security",
   description: "Live situational awareness for church security teams",
+};
+
+// Explicit rather than relying on the framework default - without this,
+// mobile browsers render at desktop width and scale down.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
