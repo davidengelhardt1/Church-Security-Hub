@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchAllGdelt } from "@/lib/gdelt";
+import { fetchAllGoogleNews } from "@/lib/googlenews";
 import { fetchAllCyberFeeds } from "@/lib/feeds";
 import { persistIncidents, loadRecentIncidents, supabaseEnabled } from "@/lib/supabase";
 import { Incident } from "@/lib/types";
@@ -54,26 +55,34 @@ export async function GET() {
       // Fall through to a live fetch if the table is empty (first run).
     }
 
-    const [gdelt, feeds] = await Promise.all([
+    const [gdelt, googleNews, feeds] = await Promise.all([
       fetchAllGdelt(),
+      fetchAllGoogleNews(),
       fetchAllCyberFeeds(),
     ]);
 
-    const live = dedupe([...gdelt, ...feeds]);
+    const live = dedupe([...googleNews, ...gdelt, ...feeds]);
 
     if (supabaseEnabled) {
       persistIncidents(live).catch((e) => console.error("persist error", e));
     }
 
+    // Per-source and per-category counts are exposed here deliberately: when
+    // one source silently returns nothing, this is the fastest way to see it.
+    const byCategory = { physical: 0, extremism: 0, cyber: 0 };
+    for (const i of live) byCategory[i.category]++;
+
     return NextResponse.json({
       incidents: live,
       fetchedAt: new Date().toISOString(),
       sources: {
+        googleNews: googleNews.length,
         gdelt: gdelt.length,
         cyberFeeds: feeds.length,
         persistence: supabaseEnabled,
         mode: "live",
       },
+      byCategory,
     });
   } catch (err: any) {
     return NextResponse.json(
