@@ -31,6 +31,35 @@ const QUERIES: { category: Category; query: string }[] = [
   },
 ];
 
+// GDELT's query parser doesn't reliably respect the AND-of-OR-groups we send
+// (in practice it can drift toward generic trending news - Prince Harry
+// stories were showing up under "cyber"). Rather than trust it, we treat
+// GDELT as a rough candidate pool and re-verify relevance ourselves: each
+// title must contain both a religious-site term AND a matching incident term.
+const RELIGIOUS_CONTEXT =
+  /church|synagogue|mosque|temple|gurdwara|parish|congregation|diocese|clergy|pastor|rabbi|imam|priest|worship/i;
+
+const VIOLENCE_TERMS =
+  /shooting|shooter|gunman|gunfire|stabbing|stabbed|attack|bomb|explosive|arson|hostage|killed|fatal|assault/i;
+
+const EXTREMISM_ACTION =
+  /attack|vandal|threat|plot|arrest|charged|stabbing|assault|bomb|shooting|arson|desecrat/i;
+const EXTREMISM_BIAS =
+  /hate crime|antisemit|islamophob|white supremac|neo-nazi|extremist|domestic terrorism|far-right|swastika/i;
+
+const CYBER_TERMS = /cyberattack|ransomware|data breach|hacked|hacking|phishing|breach/i;
+
+function isRelevant(category: Category, title: string): boolean {
+  switch (category) {
+    case "violence":
+      return RELIGIOUS_CONTEXT.test(title) && VIOLENCE_TERMS.test(title);
+    case "extremism":
+      return EXTREMISM_ACTION.test(title) && EXTREMISM_BIAS.test(title);
+    case "cyber":
+      return RELIGIOUS_CONTEXT.test(title) && CYBER_TERMS.test(title);
+  }
+}
+
 function parseGdeltDate(seendate: string): string {
   // Format: YYYYMMDDTHHMMSSZ
   const m = seendate.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
@@ -74,19 +103,21 @@ export async function fetchGdeltCategory(
   }
 
   const articles = data.articles ?? [];
-  return articles.map((a) => {
-    const publishedAt = parseGdeltDate(a.seendate);
-    return {
-      id: `gdelt-${a.url}`,
-      title: a.title,
-      url: a.url,
-      source: a.domain,
-      category,
-      severity: scoreSeverity(a.title),
-      country: a.sourcecountry,
-      publishedAt,
-    };
-  });
+  return articles
+    .filter((a) => isRelevant(category, a.title))
+    .map((a) => {
+      const publishedAt = parseGdeltDate(a.seendate);
+      return {
+        id: `gdelt-${a.url}`,
+        title: a.title,
+        url: a.url,
+        source: a.domain,
+        category,
+        severity: scoreSeverity(a.title),
+        country: a.sourcecountry,
+        publishedAt,
+      };
+    });
 }
 
 export async function fetchAllGdelt(): Promise<Incident[]> {

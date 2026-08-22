@@ -7,14 +7,34 @@ import { Incident } from "@/lib/types";
 export const dynamic = "force-dynamic"; // always fetch fresh, this is a live watch board
 export const maxDuration = 30;
 
+// Wire stories get syndicated across a dozen local-news domains with the
+// exact same headline. Keep only the first (most recent) copy of each.
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function dedupe(incidents: Incident[]): Incident[] {
-  const seen = new Map<string, Incident>();
+  const byId = new Map<string, Incident>();
   for (const inc of incidents) {
-    if (!seen.has(inc.id)) seen.set(inc.id, inc);
+    if (!byId.has(inc.id)) byId.set(inc.id, inc);
   }
-  return Array.from(seen.values()).sort(
+  const sorted = Array.from(byId.values()).sort(
     (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
   );
+
+  const seenTitles = new Set<string>();
+  const result: Incident[] = [];
+  for (const inc of sorted) {
+    const key = normalizeTitle(inc.title);
+    if (seenTitles.has(key)) continue;
+    seenTitles.add(key);
+    result.push(inc);
+  }
+  return result;
 }
 
 export async function GET() {
