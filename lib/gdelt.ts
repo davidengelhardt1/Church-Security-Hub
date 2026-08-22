@@ -78,8 +78,8 @@ function parseGdeltDate(seendate: string): string {
 export async function fetchGdeltCategory(
   category: Category,
   query: string,
-  timespan = "3d",
-  maxrecords = 40
+  timespan = "90d",
+  maxrecords = 75
 ): Promise<Incident[]> {
   const params = new URLSearchParams({
     query,
@@ -92,8 +92,8 @@ export async function fetchGdeltCategory(
 
   const res = await fetch(`${GDELT_ENDPOINT}?${params.toString()}`, {
     headers: { "User-Agent": "church-security-watch/0.1" },
-    // GDELT can be slow; give it room but don't hang the whole ingest
-    signal: AbortSignal.timeout(15000),
+    // GDELT can be slow with a wider window; give it room but don't hang the whole ingest
+    signal: AbortSignal.timeout(20000),
   });
 
   if (!res.ok) {
