@@ -26,8 +26,8 @@ function toArray<T>(x: T | T[] | undefined): T[] {
 // These feeds publish every vendor patch bulletin going back months, which
 // buries the handful of items a small org actually needs to see. Keep it to
 // a recent window and a sane cap so it doesn't drown out everything else.
-const MAX_AGE_DAYS = 30;
-const MAX_ITEMS_PER_FEED = 12;
+const MAX_AGE_DAYS = 90;
+const MAX_ITEMS_PER_FEED = 20;
 
 async function fetchOneFeed(name: string, url: string): Promise<Incident[]> {
   try {
