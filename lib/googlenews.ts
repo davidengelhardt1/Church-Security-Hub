@@ -1,6 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 import { Incident, Category } from "./types";
 import { scoreSeverity } from "./classify";
+import { isRelevant } from "./relevance";
 
 // Google News exposes a keyless RSS search endpoint. Unlike GDELT it has no
 // fragile boolean syntax and no query-length ceiling - each search is short
@@ -77,27 +78,32 @@ async function runSearch(category: Category, q: string): Promise<Incident[]> {
     const parsed = parser.parse(xml);
     const items = toArray(parsed?.rss?.channel?.item);
 
-    return items.map((item: any) => {
-      const { title, publisher } = splitTitle(String(item.title ?? ""));
-      const link = String(item.link ?? "");
-      const pubDate = item.pubDate ? new Date(item.pubDate) : new Date();
-      const sourceName =
-        (typeof item.source === "object" ? item.source?.["#text"] : item.source) ??
-        publisher ??
-        "Google News";
+    return items
+      .map((item: any) => {
+        const { title, publisher } = splitTitle(String(item.title ?? ""));
+        const link = String(item.link ?? "");
+        const pubDate = item.pubDate ? new Date(item.pubDate) : new Date();
+        const sourceName =
+          (typeof item.source === "object" ? item.source?.["#text"] : item.source) ??
+          publisher ??
+          "Google News";
 
-      return {
-        // Key on the article link so the same story found by two different
-        // searches collapses into one entry.
-        id: `gnews-${link}`,
-        title,
-        url: link,
-        source: String(sourceName),
-        category,
-        severity: scoreSeverity(title),
-        publishedAt: pubDate.toISOString(),
-      };
-    });
+        return {
+          // Key on the article link so the same story found by two different
+          // searches collapses into one entry.
+          id: `gnews-${link}`,
+          title,
+          url: link,
+          source: String(sourceName),
+          category,
+          severity: scoreSeverity(title),
+          publishedAt: pubDate.toISOString(),
+        };
+      })
+      // Google News matches loosely - a "church shooting" search returns
+      // school shootings and unrelated road accidents. Same verification
+      // the GDELT path uses.
+      .filter((inc) => isRelevant(inc.category, inc.title));
   } catch (err) {
     console.error(`Google News search errored [${q}]:`, err);
     return [];

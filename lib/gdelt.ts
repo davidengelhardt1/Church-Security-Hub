@@ -1,5 +1,6 @@
 import { Incident, Category } from "./types";
 import { scoreSeverity } from "./classify";
+import { isRelevant } from "./relevance";
 
 const GDELT_ENDPOINT = "https://api.gdeltproject.org/api/v2/doc/doc";
 
@@ -31,42 +32,6 @@ const QUERIES: { category: Category; query: string }[] = [
     query: '(church OR diocese OR nonprofit) (ransomware OR "data breach")',
   },
 ];
-
-// GDELT's query parser doesn't reliably respect the AND-of-OR-groups we send
-// (in practice it can drift toward generic trending news - Prince Harry
-// stories were showing up under "cyber"). Rather than trust it, we treat
-// GDELT as a rough candidate pool and re-verify relevance ourselves: each
-// title must contain both a religious-site term AND a matching incident term.
-const RELIGIOUS_CONTEXT =
-  /church|synagogue|mosque|temple|gurdwara|parish|congregation|diocese|clergy|pastor|rabbi|imam|priest|worship|cathedral|chapel|ministry|faith community/i;
-
-// Deliberately broad - this covers anything a security team would want on
-// their radar, not just life-threatening violence: break-ins, theft, and
-// vandalism are common and worth planning around too.
-const PHYSICAL_TERMS =
-  /shooting|shooter|gunman|gunfire|stabbing|stabbed|attack|bomb|explosive|arson|hostage|killed|fatal|assault|break-?in|burglar|robbery|robbed|theft|stolen|vandal|threat|weapon|gun|knife|evacuat|lockdown|intruder|disrupt|protest/i;
-
-const EXTREMISM_ACTION =
-  /attack|vandal|threat|plot|arrest|charged|stabbing|assault|bomb|shooting|arson|desecrat/i;
-const EXTREMISM_BIAS =
-  /hate crime|antisemit|islamophob|white supremac|neo-nazi|extremist|domestic terrorism|far-right|swastika/i;
-
-// Cyber stays scoped to attacks/fraud that specifically target churches or
-// religious nonprofits - not general vendor CVEs (that's what the dedicated
-// advisory feed in feeds.ts is for).
-const CYBER_TERMS =
-  /cyberattack|ransomware|data breach|hacked|hacking|phishing|breach|fraud|scam|cybercrime|compromised|spoofed|business email compromise/i;
-
-function isRelevant(category: Category, title: string): boolean {
-  switch (category) {
-    case "physical":
-      return RELIGIOUS_CONTEXT.test(title) && PHYSICAL_TERMS.test(title);
-    case "extremism":
-      return EXTREMISM_ACTION.test(title) && EXTREMISM_BIAS.test(title);
-    case "cyber":
-      return RELIGIOUS_CONTEXT.test(title) && CYBER_TERMS.test(title);
-  }
-}
 
 function parseGdeltDate(seendate: string): string {
   // Format: YYYYMMDDTHHMMSSZ
