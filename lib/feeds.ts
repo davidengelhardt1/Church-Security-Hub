@@ -23,6 +23,12 @@ function toArray<T>(x: T | T[] | undefined): T[] {
   return Array.isArray(x) ? x : [x];
 }
 
+// These feeds publish every vendor patch bulletin going back months, which
+// buries the handful of items a small org actually needs to see. Keep it to
+// a recent window and a sane cap so it doesn't drown out everything else.
+const MAX_AGE_DAYS = 30;
+const MAX_ITEMS_PER_FEED = 12;
+
 async function fetchOneFeed(name: string, url: string): Promise<Incident[]> {
   try {
     const res = await fetch(url, {
@@ -34,7 +40,9 @@ async function fetchOneFeed(name: string, url: string): Promise<Incident[]> {
     const parsed = parser.parse(xml);
 
     const items = toArray(parsed?.rss?.channel?.item);
-    return items.map((item: any) => {
+    const cutoff = Date.now() - MAX_AGE_DAYS * 86400000;
+
+    const mapped = items.map((item: any) => {
       const title = String(item.title ?? "Untitled advisory");
       const link = String(item.link ?? url);
       const pubDate = item.pubDate ? new Date(item.pubDate) : new Date();
@@ -47,8 +55,15 @@ async function fetchOneFeed(name: string, url: string): Promise<Incident[]> {
         severity: scoreSeverity(title),
         publishedAt: pubDate.toISOString(),
         snippet: item.description ? String(item.description).slice(0, 240) : undefined,
+        _ts: pubDate.getTime(),
       };
     });
+
+    return mapped
+      .filter((i) => i._ts >= cutoff)
+      .sort((a, b) => b._ts - a._ts)
+      .slice(0, MAX_ITEMS_PER_FEED)
+      .map(({ _ts, ...rest }) => rest);
   } catch {
     // A single dead/slow feed shouldn't take down the whole dashboard
     return [];
