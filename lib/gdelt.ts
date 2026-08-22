@@ -15,19 +15,19 @@ interface GdeltArticle {
 // about parens/quotes) so results stay relevant instead of flooding with noise.
 const QUERIES: { category: Category; query: string }[] = [
   {
-    category: "violence",
+    category: "physical",
     query:
-      '(church OR synagogue OR mosque OR "house of worship" OR "place of worship" OR temple) (shooting OR gunman OR stabbing OR "bomb threat" OR attack OR shooter)',
+      '(church OR synagogue OR mosque OR "house of worship" OR "place of worship" OR temple OR cathedral OR chapel OR parish) (shooting OR gunman OR stabbing OR "bomb threat" OR attack OR shooter OR burglary OR "break-in" OR robbery OR theft OR stolen OR vandalism OR arson OR threat OR evacuated OR lockdown OR intruder)',
   },
   {
     category: "extremism",
     query:
-      '("hate crime" OR extremist OR "white supremacist" OR antisemitic OR islamophobic OR "domestic terrorism") (church OR synagogue OR mosque OR "religious site" OR congregation)',
+      '("hate crime" OR extremist OR "white supremacist" OR antisemitic OR islamophobic OR "domestic terrorism" OR "neo-nazi") (church OR synagogue OR mosque OR "religious site" OR congregation OR temple OR gurdwara)',
   },
   {
     category: "cyber",
     query:
-      '(church OR nonprofit OR diocese OR congregation OR "religious organization") (cyberattack OR ransomware OR "data breach" OR hacked OR phishing)',
+      '(church OR synagogue OR mosque OR parish OR diocese OR congregation OR "religious organization" OR nonprofit OR charity OR ministry) (cyberattack OR ransomware OR "data breach" OR hacked OR phishing OR fraud OR scam OR "wire fraud" OR breach OR cybercrime)',
   },
 ];
 
@@ -37,22 +37,29 @@ const QUERIES: { category: Category; query: string }[] = [
 // GDELT as a rough candidate pool and re-verify relevance ourselves: each
 // title must contain both a religious-site term AND a matching incident term.
 const RELIGIOUS_CONTEXT =
-  /church|synagogue|mosque|temple|gurdwara|parish|congregation|diocese|clergy|pastor|rabbi|imam|priest|worship/i;
+  /church|synagogue|mosque|temple|gurdwara|parish|congregation|diocese|clergy|pastor|rabbi|imam|priest|worship|cathedral|chapel|ministry|faith community/i;
 
-const VIOLENCE_TERMS =
-  /shooting|shooter|gunman|gunfire|stabbing|stabbed|attack|bomb|explosive|arson|hostage|killed|fatal|assault/i;
+// Deliberately broad - this covers anything a security team would want on
+// their radar, not just life-threatening violence: break-ins, theft, and
+// vandalism are common and worth planning around too.
+const PHYSICAL_TERMS =
+  /shooting|shooter|gunman|gunfire|stabbing|stabbed|attack|bomb|explosive|arson|hostage|killed|fatal|assault|break-?in|burglar|robbery|robbed|theft|stolen|vandal|threat|weapon|gun|knife|evacuat|lockdown|intruder|disrupt|protest/i;
 
 const EXTREMISM_ACTION =
   /attack|vandal|threat|plot|arrest|charged|stabbing|assault|bomb|shooting|arson|desecrat/i;
 const EXTREMISM_BIAS =
   /hate crime|antisemit|islamophob|white supremac|neo-nazi|extremist|domestic terrorism|far-right|swastika/i;
 
-const CYBER_TERMS = /cyberattack|ransomware|data breach|hacked|hacking|phishing|breach/i;
+// Cyber stays scoped to attacks/fraud that specifically target churches or
+// religious nonprofits - not general vendor CVEs (that's what the dedicated
+// advisory feed in feeds.ts is for).
+const CYBER_TERMS =
+  /cyberattack|ransomware|data breach|hacked|hacking|phishing|breach|fraud|scam|cybercrime|compromised|spoofed|business email compromise/i;
 
 function isRelevant(category: Category, title: string): boolean {
   switch (category) {
-    case "violence":
-      return RELIGIOUS_CONTEXT.test(title) && VIOLENCE_TERMS.test(title);
+    case "physical":
+      return RELIGIOUS_CONTEXT.test(title) && PHYSICAL_TERMS.test(title);
     case "extremism":
       return EXTREMISM_ACTION.test(title) && EXTREMISM_BIAS.test(title);
     case "cyber":

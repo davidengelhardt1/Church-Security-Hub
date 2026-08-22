@@ -15,7 +15,7 @@ export default function Page() {
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
 
   const [activeCategories, setActiveCategories] = useState<Set<Category>>(
-    new Set(["violence", "extremism", "cyber"])
+    new Set(["physical", "extremism", "cyber"])
   );
   const [activeSeverities, setActiveSeverities] = useState<Set<Severity>>(
     new Set(["high", "medium", "low"])

@@ -7,7 +7,7 @@ create table if not exists incidents (
   title text not null,
   url text not null,
   source text not null,
-  category text not null check (category in ('violence', 'extremism', 'cyber')),
+  category text not null check (category in ('physical', 'extremism', 'cyber')),
   severity text not null check (severity in ('high', 'medium', 'low')),
   country text,
   published_at timestamptz not null,

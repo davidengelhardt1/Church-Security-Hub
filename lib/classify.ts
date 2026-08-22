@@ -4,13 +4,15 @@ const HIGH_SIGNALS = [
   "shooting", "shooter", "gunman", "gunfire", "killed", "dead", "fatal",
   "stabbing", "bomb", "explosive", "hostage", "active shooter",
   "mass casualty", "ransomware", "data breach", "exploited", "critical vulnerability",
-  "arson", "terror",
+  "arson", "terror", "armed", "hijack",
 ];
 
 const MEDIUM_SIGNALS = [
   "threat", "threatened", "arrested", "vandalism", "vandalized", "assault",
   "hate crime", "swatting", "bomb threat", "phishing", "breach", "hacked",
   "compromised", "extremist", "white supremacist", "propaganda", "intimidation",
+  "burglary", "break-in", "robbery", "robbed", "theft", "stolen", "evacuated",
+  "lockdown", "intruder", "fraud", "scam", "disrupted",
 ];
 
 const LOW_SIGNALS = [

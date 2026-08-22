@@ -10,7 +10,7 @@ interface Props {
 }
 
 const CATEGORIES: { key: Category; label: string; color: string }[] = [
-  { key: "violence", label: "Violence", color: "var(--cat-violence)" },
+  { key: "physical", label: "Physical Security", color: "var(--cat-physical)" },
   { key: "extremism", label: "Extremism", color: "var(--cat-extremism)" },
   { key: "cyber", label: "Cyber", color: "var(--cat-cyber)" },
 ];

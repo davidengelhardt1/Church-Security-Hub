@@ -7,7 +7,7 @@ const SEV_LABEL: Record<Severity, string> = {
 };
 
 const CAT_LABEL: Record<Category, string> = {
-  violence: "VIOLENCE",
+  physical: "PHYSICAL",
   extremism: "EXTREMISM",
   cyber: "CYBER",
 };
@@ -33,8 +33,8 @@ export function SeverityDot({ severity }: { severity: Severity }) {
 
 export function CategoryTag({ category }: { category: Category }) {
   const color =
-    category === "violence"
-      ? "var(--cat-violence)"
+    category === "physical"
+      ? "var(--cat-physical)"
       : category === "extremism"
       ? "var(--cat-extremism)"
       : "var(--cat-cyber)";
