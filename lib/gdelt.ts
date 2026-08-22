@@ -78,7 +78,7 @@ function parseGdeltDate(seendate: string): string {
 export async function fetchGdeltCategory(
   category: Category,
   query: string,
-  timespan = "90d",
+  timespan?: string,
   maxrecords = 75
 ): Promise<Incident[]> {
   const params = new URLSearchParams({
@@ -87,13 +87,16 @@ export async function fetchGdeltCategory(
     format: "json",
     maxrecords: String(maxrecords),
     sort: "datedesc",
-    timespan,
   });
+  // Omit timespan entirely rather than pass a custom value - GDELT's own
+  // documented default (last 3 months) is reliable; a hand-rolled value
+  // like "90d" isn't guaranteed to parse the way we'd expect.
+  if (timespan) params.set("timespan", timespan);
 
   const res = await fetch(`${GDELT_ENDPOINT}?${params.toString()}`, {
     headers: { "User-Agent": "church-security-watch/0.1" },
-    // GDELT can be slow with a wider window; give it room but don't hang the whole ingest
-    signal: AbortSignal.timeout(20000),
+    // GDELT can be slow over a 3-month window; give it room but don't hang the whole ingest
+    signal: AbortSignal.timeout(25000),
   });
 
   if (!res.ok) {
@@ -132,8 +135,15 @@ export async function fetchAllGdelt(): Promise<Incident[]> {
     QUERIES.map((q) => fetchGdeltCategory(q.category, q.query))
   );
   const incidents: Incident[] = [];
-  for (const r of results) {
-    if (r.status === "fulfilled") incidents.push(...r.value);
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === "fulfilled") {
+      incidents.push(...r.value);
+    } else {
+      // Log which category failed and why, instead of silently returning
+      // nothing - a single bad query shouldn't be a mystery to debug later.
+      console.error(`GDELT query failed for category "${QUERIES[i].category}":`, r.reason);
+    }
   }
   return incidents;
 }
