@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { fetchAllGdelt } from "@/lib/gdelt";
 import { fetchAllGoogleNews } from "@/lib/googlenews";
 import { fetchAllCyberFeeds } from "@/lib/feeds";
-import { persistIncidents, loadRecentIncidents, supabaseEnabled } from "@/lib/supabase";
+import {
+  persistIncidents,
+  loadRecentIncidents,
+  supabaseEnabled,
+  supabaseConfigSource,
+} from "@/lib/supabase";
 import { Incident } from "@/lib/types";
 
 export const dynamic = "force-dynamic"; // always fetch fresh, this is a live watch board
@@ -80,6 +85,8 @@ export async function GET() {
         gdelt: gdelt.length,
         cyberFeeds: feeds.length,
         persistence: supabaseEnabled,
+        // Which env var names supplied the credentials (never the values).
+        persistenceConfig: supabaseConfigSource,
         mode: "live",
       },
       byCategory,
