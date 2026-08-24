@@ -161,7 +161,7 @@ export default function Page() {
           {view === "log" ? (
             <WatchLog incidents={filtered} />
           ) : (
-            <div style={{ flex: 1, minHeight: 420 }}>
+            <div className="map-panel" style={{ flex: 1, minHeight: 420 }}>
               <IncidentMap incidents={filtered} />
             </div>
           )}

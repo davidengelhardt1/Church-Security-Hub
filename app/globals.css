@@ -153,6 +153,8 @@ html, body {
 /* --- Mobile --- */
 
 @media (max-width: 768px) {
+  .map-panel { min-height: 340px !important; }
+
   /* Sidebar becomes a filter bar above the log */
   .board__body { flex-direction: column; }
 
