@@ -94,15 +94,22 @@ export async function persistIncidents(
 
   // Is the table empty? If so this is a first run / backfill, and we must
   // not fire alerts for the entire historical window.
-  const { count: existingTotal, error: countError } = await supabase
+  //
+  // Deliberately NOT using a `head: true, count: "exact"` query here - that
+  // relies on parsing a Content-Range response header, and in practice it
+  // misreported an already-populated table as empty. Checking for the
+  // literal existence of one row is a smaller surface for something to go
+  // wrong.
+  const { data: existingRow, error: countError } = await supabase
     .from("incidents")
-    .select("id", { count: "exact", head: true });
+    .select("id")
+    .limit(1);
 
   if (countError) {
-    console.error("Supabase count failed:", countError.message);
+    console.error("Supabase existence check failed:", countError.message);
     return empty;
   }
-  const isFirstRun = (existingTotal ?? 0) === 0;
+  const isFirstRun = !existingRow || existingRow.length === 0;
 
   // Insert in batches. These are POST bodies, not URLs, so length is not a
   // constraint here - batching just keeps individual requests reasonable.
