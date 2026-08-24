@@ -11,7 +11,10 @@ import {
 import { Incident } from "@/lib/types";
 
 export const dynamic = "force-dynamic"; // always fetch fresh, this is a live watch board
-export const maxDuration = 30;
+// The first request (empty table) fetches every source AND writes several
+// hundred rows, so it needs headroom. Subsequent requests read from
+// Supabase and are fast.
+export const maxDuration = 60;
 
 // Wire stories get syndicated across a dozen local-news domains with the
 // exact same headline. Keep only the first (most recent) copy of each.
@@ -68,8 +71,16 @@ export async function GET() {
 
     const live = dedupe([...googleNews, ...gdelt, ...feeds]);
 
+    // Must be awaited: Vercel freezes the function as soon as the response
+    // is sent, so a fire-and-forget write would silently never complete.
+    // This only costs latency on the first load - once the table is
+    // populated, requests are served from Supabase and skip the live fetch.
     if (supabaseEnabled) {
-      persistIncidents(live).catch((e) => console.error("persist error", e));
+      try {
+        await persistIncidents(live);
+      } catch (e) {
+        console.error("persist error", e);
+      }
     }
 
     // Per-source and per-category counts are exposed here deliberately: when
