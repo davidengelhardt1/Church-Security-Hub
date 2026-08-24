@@ -53,6 +53,9 @@ function toRow(i: Incident) {
     country: i.country ?? null,
     published_at: i.publishedAt,
     snippet: i.snippet ?? null,
+    location_name: i.locationName ?? null,
+    lat: i.lat ?? null,
+    lng: i.lng ?? null,
   };
 }
 
@@ -67,6 +70,9 @@ function fromRow(r: any): Incident {
     country: r.country ?? undefined,
     publishedAt: r.published_at,
     snippet: r.snippet ?? undefined,
+    locationName: r.location_name ?? undefined,
+    lat: r.lat ?? undefined,
+    lng: r.lng ?? undefined,
   };
 }
 
@@ -141,6 +147,46 @@ export async function persistIncidents(
   if (attempted === 0) return empty;
 
   return { persisted: true, count: attempted, newIds, isFirstRun };
+}
+
+/**
+ * Backfills lat/lng for existing rows that predate the map feature.
+ * Matching is local and instant (no network call), so this can process
+ * everything in one pass rather than trickling in over days.
+ */
+export async function backfillLocations(): Promise<{ scanned: number; updated: number }> {
+  if (!supabase) return { scanned: 0, updated: 0 };
+
+  const { data, error } = await supabase
+    .from("incidents")
+    .select("id, title")
+    .is("lat", null)
+    .limit(1000);
+
+  if (error) {
+    console.error("Backfill fetch failed:", error.message);
+    return { scanned: 0, updated: 0 };
+  }
+  if (!data || data.length === 0) return { scanned: 0, updated: 0 };
+
+  const { matchLocation } = await import("./geocode");
+
+  let updated = 0;
+  for (const row of data) {
+    const match = matchLocation(row.title);
+    if (!match) continue;
+    const { error: updateError } = await supabase
+      .from("incidents")
+      .update({ location_name: match.name, lat: match.lat, lng: match.lng })
+      .eq("id", row.id);
+    if (updateError) {
+      console.error(`Backfill update failed for ${row.id}:`, updateError.message);
+      continue;
+    }
+    updated++;
+  }
+
+  return { scanned: data.length, updated };
 }
 
 export async function loadRecentIncidents(days = 90): Promise<Incident[]> {

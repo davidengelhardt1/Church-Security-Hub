@@ -11,4 +11,9 @@ export interface Incident {
   country?: string;
   publishedAt: string; // ISO string
   snippet?: string;
+  // Populated by lib/geocode.ts matching the title against a local
+  // gazetteer - see that file for why this isn't a live geocoding API call.
+  locationName?: string;
+  lat?: number;
+  lng?: number;
 }
