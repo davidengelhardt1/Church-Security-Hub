@@ -21,6 +21,7 @@ export function IncidentMap({ incidents }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   const located = incidents.filter(
     (i) => typeof i.lat === "number" && typeof i.lng === "number"
@@ -56,10 +57,29 @@ export function IncidentMap({ incidents }: Props) {
 
       layerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
+
+      // Leaflet measures its container's pixel size exactly once, at init.
+      // On mobile that measurement can happen before the layout has
+      // settled (address bar collapsing, viewport height changing right
+      // after load), which locks in a wrong size and renders broken/
+      // partial tiles. A ResizeObserver tells Leaflet to remeasure
+      // whenever the container's actual size changes - covers initial
+      // load, orientation change, and switching into the Map tab.
+      const resizeObserver = new ResizeObserver(() => {
+        mapRef.current?.invalidateSize();
+      });
+      resizeObserver.observe(containerRef.current);
+      resizeObserverRef.current = resizeObserver;
+
+      // Also catch the very next paint, in case the observer's first
+      // callback fires before layout is fully settled.
+      requestAnimationFrame(() => mapRef.current?.invalidateSize());
     })();
 
     return () => {
       cancelled = true;
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
