@@ -71,12 +71,20 @@ function fromRow(r: any): Incident {
 }
 
 /**
- * Upserts incidents and reports which ones we had never seen before.
+ * Inserts incidents and reports which ones we had never seen before.
  *
  * The news sources return the same rolling 90-day window on every run, so
  * "new to us" can't be inferred from publish date - it has to be determined
  * against what's already stored. That distinction is what makes alerting
  * possible without spamming the same story every 24 hours.
+ *
+ * Implementation note: an earlier version pre-queried which IDs already
+ * existed via `.in("id", [...])`. That silently failed - Google News IDs
+ * embed a full encoded article URL (up to ~750 chars), so a few hundred of
+ * them blew past the maximum URL length and the request errored out.
+ * Instead we let Postgres do the work: `ON CONFLICT DO NOTHING` combined
+ * with `.select()` returns exactly the rows that were actually inserted,
+ * with no ID list in the request URL at all.
  */
 export async function persistIncidents(
   incidents: Incident[]
@@ -86,40 +94,46 @@ export async function persistIncidents(
 
   // Is the table empty? If so this is a first run / backfill, and we must
   // not fire alerts for the entire historical window.
-  const { count: existingTotal } = await supabase
+  const { count: existingTotal, error: countError } = await supabase
     .from("incidents")
     .select("id", { count: "exact", head: true });
-  const isFirstRun = (existingTotal ?? 0) === 0;
 
-  // Which of these IDs do we already have?
-  const ids = incidents.map((i) => i.id);
-  const known = new Set<string>();
-  const CHUNK = 200; // keep the `in` filter (and URL length) reasonable
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const slice = ids.slice(i, i + CHUNK);
-    const { data, error } = await supabase
-      .from("incidents")
-      .select("id")
-      .in("id", slice);
-    if (error) {
-      console.error("Supabase lookup failed:", error.message);
-      return empty;
-    }
-    for (const row of data ?? []) known.add(row.id);
-  }
-
-  const newIds = ids.filter((id) => !known.has(id));
-
-  const { error } = await supabase
-    .from("incidents")
-    .upsert(incidents.map(toRow), { onConflict: "id" });
-
-  if (error) {
-    console.error("Supabase upsert failed:", error.message);
+  if (countError) {
+    console.error("Supabase count failed:", countError.message);
     return empty;
   }
+  const isFirstRun = (existingTotal ?? 0) === 0;
 
-  return { persisted: true, count: incidents.length, newIds, isFirstRun };
+  // Insert in batches. These are POST bodies, not URLs, so length is not a
+  // constraint here - batching just keeps individual requests reasonable.
+  const CHUNK = 100;
+  const newIds: string[] = [];
+  let attempted = 0;
+
+  for (let i = 0; i < incidents.length; i += CHUNK) {
+    const batch = incidents.slice(i, i + CHUNK).map(toRow);
+
+    const { data, error } = await supabase
+      .from("incidents")
+      .upsert(batch, { onConflict: "id", ignoreDuplicates: true })
+      .select("id");
+
+    if (error) {
+      console.error(
+        `Supabase insert failed (batch ${Math.floor(i / CHUNK) + 1}):`,
+        error.message
+      );
+      continue; // one bad batch shouldn't discard the rest
+    }
+
+    // With ignoreDuplicates, only genuinely-new rows are returned.
+    for (const row of data ?? []) newIds.push(row.id);
+    attempted += batch.length;
+  }
+
+  if (attempted === 0) return empty;
+
+  return { persisted: true, count: attempted, newIds, isFirstRun };
 }
 
 export async function loadRecentIncidents(days = 90): Promise<Incident[]> {
@@ -149,10 +163,13 @@ export async function getPendingAlerts(
   if (!supabase || candidateIds.length === 0) return [];
   const since = new Date(Date.now() - maxAgeDays * 86400000).toISOString();
 
+  // Deliberately NOT filtering by candidateIds here: incident IDs embed full
+  // article URLs and a list of them would overflow the request URL. The
+  // `alerted = false` flag already scopes this to undispatched incidents,
+  // which is equivalent - anything previously seen is already marked.
   const { data, error } = await supabase
     .from("incidents")
     .select("*")
-    .in("id", candidateIds.slice(0, 500))
     .eq("alerted", false)
     .eq("severity", "high")
     .gte("published_at", since)
@@ -166,28 +183,36 @@ export async function getPendingAlerts(
   return data.map(fromRow);
 }
 
-/** Marks incidents as alerted so they're never dispatched twice. */
+/**
+ * Marks incidents as alerted so they're never dispatched twice.
+ *
+ * IDs go one per request rather than as an `.in()` list: they embed full
+ * article URLs, and batching them overflows the maximum request URL length.
+ * The alert cap (8 per run) keeps this to a handful of small requests.
+ */
 export async function markAlerted(ids: string[]) {
   if (!supabase || ids.length === 0) return;
-  const { error } = await supabase
-    .from("incidents")
-    .update({ alerted: true, alerted_at: new Date().toISOString() })
-    .in("id", ids);
-  if (error) console.error("Failed to mark alerted:", error.message);
+  for (const id of ids) {
+    const { error } = await supabase
+      .from("incidents")
+      .update({ alerted: true, alerted_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) console.error("Failed to mark alerted:", error.message);
+  }
 }
 
 /**
  * Marks everything as alerted WITHOUT sending anything. Used on the first
  * ingest run so the initial 90-day backfill doesn't blast the whole team.
+ *
+ * Applied as a single filtered UPDATE rather than by ID list - same reason
+ * as above, and it also covers rows written by a concurrent page load.
  */
-export async function suppressAlertsForBackfill(ids: string[]) {
-  if (!supabase || ids.length === 0) return;
-  const CHUNK = 200;
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const { error } = await supabase
-      .from("incidents")
-      .update({ alerted: true, alerted_at: new Date().toISOString() })
-      .in("id", ids.slice(i, i + CHUNK));
-    if (error) console.error("Backfill suppression failed:", error.message);
-  }
+export async function suppressAlertsForBackfill(_ids?: string[]) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("incidents")
+    .update({ alerted: true, alerted_at: new Date().toISOString() })
+    .eq("alerted", false);
+  if (error) console.error("Backfill suppression failed:", error.message);
 }
