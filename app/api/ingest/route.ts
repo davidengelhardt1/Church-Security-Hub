@@ -61,7 +61,10 @@ export async function GET(request: Request) {
       fetched: all.length,
       stored: count,
       newIncidents: newIds.length,
-      alerting: "suppressed (first run backfill)",
+      alerting:
+        newIds.length > 0
+          ? `suppressed - table appeared empty, so ${newIds.length} incident(s) were stored but marked as already-alerted rather than dispatched`
+          : "no incidents were new this run - nothing to alert on regardless",
       ranAt: new Date().toISOString(),
     });
   }
