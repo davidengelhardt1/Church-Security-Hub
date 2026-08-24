@@ -9,6 +9,7 @@ import {
   supabaseConfigSource,
 } from "@/lib/supabase";
 import { Incident } from "@/lib/types";
+import { attachLocations } from "@/lib/attachLocations";
 
 export const dynamic = "force-dynamic"; // always fetch fresh, this is a live watch board
 // The first request (empty table) fetches every source AND writes several
@@ -69,7 +70,7 @@ export async function GET() {
       fetchAllCyberFeeds(),
     ]);
 
-    const live = dedupe([...googleNews, ...gdelt, ...feeds]);
+    const live = attachLocations(dedupe([...googleNews, ...gdelt, ...feeds]));
 
     // Must be awaited: Vercel freezes the function as soon as the response
     // is sent, so a fire-and-forget write would silently never complete.

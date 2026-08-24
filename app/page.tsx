@@ -1,12 +1,39 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { Incident, Category, Severity } from "@/lib/types";
 import { Ribbon } from "@/components/Ribbon";
 import { FilterRail } from "@/components/FilterRail";
 import { WatchLog } from "@/components/WatchLog";
 
+// Leaflet touches `window` at import time, so it can never be part of the
+// server-rendered bundle - ssr:false is load-bearing here, not optional.
+const IncidentMap = dynamic(
+  () => import("@/components/IncidentMap").then((m) => m.IncidentMap),
+  { ssr: false, loading: () => <MapLoadingPlaceholder /> }
+);
+
+function MapLoadingPlaceholder() {
+  return (
+    <div
+      className="mono"
+      style={{
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--text-dim)",
+        fontSize: 13,
+      }}
+    >
+      Loading map…
+    </div>
+  );
+}
+
 const REFRESH_MS = 5 * 60 * 1000; // 5 minutes
+type View = "log" | "map";
 
 export default function Page() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -21,6 +48,7 @@ export default function Page() {
     new Set(["high", "medium", "low"])
   );
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<View>("log");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,7 +110,37 @@ export default function Page() {
           search={search}
           onSearch={setSearch}
         />
-        <main className="board__main">
+        <main className="board__main" style={{ display: "flex", flexDirection: "column" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 2,
+              padding: "10px 24px",
+              borderBottom: "1px solid var(--hairline)",
+              background: "var(--panel)",
+            }}
+          >
+            {(["log", "map"] as View[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className="mono"
+                style={{
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  border: "1px solid var(--hairline)",
+                  borderRadius: 4,
+                  background: view === v ? "var(--panel-raised)" : "transparent",
+                  color: view === v ? "var(--text-primary)" : "var(--text-dim)",
+                }}
+              >
+                {v === "log" ? "Watch Log" : "Map"}
+              </button>
+            ))}
+          </div>
+
           {error && (
             <div
               className="mono"
@@ -99,7 +157,14 @@ export default function Page() {
               Sync failed: {error}
             </div>
           )}
-          <WatchLog incidents={filtered} />
+
+          {view === "log" ? (
+            <WatchLog incidents={filtered} />
+          ) : (
+            <div style={{ flex: 1, minHeight: 420 }}>
+              <IncidentMap incidents={filtered} />
+            </div>
+          )}
         </main>
       </div>
     </div>

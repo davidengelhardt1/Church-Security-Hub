@@ -7,10 +7,12 @@ import {
   getPendingAlerts,
   markAlerted,
   suppressAlertsForBackfill,
+  backfillLocations,
   supabaseEnabled,
 } from "@/lib/supabase";
 import { sendAlerts, alertsEnabled } from "@/lib/alerts";
 import { isAlertWorthy, dedupeEvents } from "@/lib/alertFilter";
+import { attachLocations } from "@/lib/attachLocations";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -41,7 +43,7 @@ export async function GET(request: Request) {
     fetchAllGoogleNews(),
     fetchAllCyberFeeds(),
   ]);
-  const all = [...googleNews, ...gdelt, ...feeds];
+  const all = attachLocations([...googleNews, ...gdelt, ...feeds]);
 
   const { persisted, count, newIds, isFirstRun } = await persistIncidents(all);
 
@@ -51,6 +53,11 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
+
+  // One-time-ish catch-up for rows written before the map feature existed.
+  // Cheap to run every time (no network call, just a title match), and it
+  // naturally stops finding work once the backlog is caught up.
+  const backfill = await backfillLocations();
 
   // First run backfills a 90-day window. Alerting on all of it would send a
   // wall of notifications about incidents the team has long since seen, so
@@ -65,6 +72,7 @@ export async function GET(request: Request) {
         newIds.length > 0
           ? `suppressed - table appeared empty, so ${newIds.length} incident(s) were stored but marked as already-alerted rather than dispatched`
           : "no incidents were new this run - nothing to alert on regardless",
+      locationsBackfilled: backfill.updated,
       ranAt: new Date().toISOString(),
     });
   }
@@ -106,6 +114,7 @@ export async function GET(request: Request) {
     afterEventDedupe: pending.length,
     alertsSent: alertResult.sent ? pending.length : 0,
     alertNote: alertResult.reason,
+    locationsBackfilled: backfill.updated,
     ranAt: new Date().toISOString(),
   });
 }
