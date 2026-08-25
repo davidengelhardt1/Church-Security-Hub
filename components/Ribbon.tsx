@@ -91,7 +91,7 @@ export function Ribbon({
             textDecoration: "none",
           }}
         >
-          {userEmail ? "My Account →" : "Get Alerts →"}
+          {userEmail ? "My Account →" : "Sign In →"}
         </a>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span
