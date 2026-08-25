@@ -3,7 +3,16 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 
+// Magic-link auth is ONE mechanism, not two: the same email link signs in
+// an existing user or creates a new one, and Supabase deliberately makes
+// both cases produce an identical response (no way to tell "no account
+// with that email" from "check your inbox") to avoid leaking which emails
+// have accounts on this site. So "Sign In" and "Sign Up" below are the
+// same call underneath - this is a UI clarity choice, not two systems.
+type Mode = "signin" | "signup";
+
 export default function LoginPage() {
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -29,6 +38,19 @@ export default function LoginPage() {
     }
   }
 
+  const copy =
+    mode === "signin"
+      ? {
+          heading: "Sign In",
+          sub: "enter the email you used before — we'll send you a link back in",
+          button: "Send sign-in link",
+        }
+      : {
+          heading: "Sign Up",
+          sub: "enter your email to start getting high-severity incident alerts",
+          button: "Send sign-up link",
+        };
+
   return (
     <div
       style={{
@@ -49,6 +71,45 @@ export default function LoginPage() {
           padding: 32,
         }}
       >
+        {/* Tabs - purely a UI choice for clarity; both call the same
+            signInWithOtp underneath. See note at top of file. */}
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            marginBottom: 24,
+            background: "var(--panel-raised)",
+            borderRadius: 6,
+            padding: 4,
+          }}
+        >
+          {(["signin", "signup"] as Mode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => {
+                setMode(m);
+                setStatus("idle");
+                setErrorMsg("");
+              }}
+              className="mono"
+              style={{
+                flex: 1,
+                padding: "8px 0",
+                fontSize: 12,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                border: "none",
+                borderRadius: 4,
+                background: mode === m ? "var(--panel)" : "transparent",
+                color: mode === m ? "var(--text-primary)" : "var(--text-dim)",
+                cursor: "pointer",
+              }}
+            >
+              {m === "signin" ? "Sign In" : "Sign Up"}
+            </button>
+          ))}
+        </div>
+
         <h1
           style={{
             fontFamily: "var(--font-display)",
@@ -59,13 +120,13 @@ export default function LoginPage() {
             letterSpacing: "0.02em",
           }}
         >
-          Get Alerts
+          {copy.heading}
         </h1>
         <p
           className="mono"
           style={{ fontSize: 13, color: "var(--text-dim)", margin: "0 0 24px" }}
         >
-          sign in to subscribe to high-severity incident alerts
+          {copy.sub}
         </p>
 
         {status === "sent" ? (
@@ -79,8 +140,14 @@ export default function LoginPage() {
               lineHeight: 1.5,
             }}
           >
-            Check <strong>{email}</strong> for a sign-in link. It'll expire
-            after a while, so use it soon.
+            Check <strong>{email}</strong> for a link. It'll expire after a
+            while, so use it soon.
+            {mode === "signup" && (
+              <div style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 13 }}>
+                Already had an account with this email? The same link signs
+                you in — nothing gets duplicated.
+              </div>
+            )}
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
@@ -98,7 +165,7 @@ export default function LoginPage() {
                 borderRadius: 6,
                 padding: "12px 14px",
                 color: "var(--text-primary)",
-                fontSize: 16, // prevents iOS auto-zoom on focus
+                fontSize: 16,
                 fontFamily: "var(--font-body)",
                 marginBottom: 12,
               }}
@@ -119,7 +186,7 @@ export default function LoginPage() {
                 opacity: status === "sending" ? 0.6 : 1,
               }}
             >
-              {status === "sending" ? "Sending…" : "Send sign-in link"}
+              {status === "sending" ? "Sending…" : copy.button}
             </button>
 
             {status === "error" && (
@@ -132,7 +199,8 @@ export default function LoginPage() {
               className="mono"
               style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 16 }}
             >
-              No password needed - we'll email you a link instead.
+              No password to remember — every sign-in, on any device, works
+              this same way: enter your email, click the link we send.
             </p>
           </form>
         )}
