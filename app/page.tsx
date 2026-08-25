@@ -6,6 +6,7 @@ import { Incident, Category, Severity } from "@/lib/types";
 import { Ribbon } from "@/components/Ribbon";
 import { FilterRail } from "@/components/FilterRail";
 import { WatchLog } from "@/components/WatchLog";
+import { createClient, authConfigured } from "@/lib/supabase-browser";
 
 // Leaflet touches `window` at import time, so it can never be part of the
 // server-rendered bundle - ssr:false is load-bearing here, not optional.
@@ -49,6 +50,26 @@ export default function Page() {
   );
   const [search, setSearch] = useState("");
   const [view, setView] = useState<View>("log");
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  // Reflects sign-in state in the nav link ("Get Alerts" -> "My Account").
+  // Runs once on mount, then stays in sync via onAuthStateChange - e.g.
+  // if someone signs out on /preferences and navigates back here without
+  // a full page reload.
+  useEffect(() => {
+    if (!authConfigured) return;
+    const supabase = createClient();
+
+    supabase.auth.getUser().then(({ data }) => {
+      setUserEmail(data.user?.email ?? null);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user?.email ?? null);
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -100,7 +121,7 @@ export default function Page() {
 
   return (
     <div className="board">
-      <Ribbon incidents={filtered} fetchedAt={fetchedAt} loading={loading} />
+      <Ribbon incidents={filtered} fetchedAt={fetchedAt} loading={loading} userEmail={userEmail} />
       <div className="board__body">
         <FilterRail
           activeCategories={activeCategories}

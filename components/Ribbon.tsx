@@ -14,10 +14,12 @@ export function Ribbon({
   incidents,
   fetchedAt,
   loading,
+  userEmail,
 }: {
   incidents: Incident[];
   fetchedAt: string | null;
   loading: boolean;
+  userEmail?: string | null;
 }) {
   const counts = { high: 0, medium: 0, low: 0 };
   for (const i of incidents) counts[i.severity]++;
@@ -77,8 +79,9 @@ export function Ribbon({
 
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
         <a
-          href="/login"
+          href={userEmail ? "/preferences" : "/login"}
           className="mono"
+          title={userEmail ? `Signed in as ${userEmail}` : undefined}
           style={{
             fontSize: 12,
             color: "var(--text-secondary)",
@@ -88,7 +91,7 @@ export function Ribbon({
             textDecoration: "none",
           }}
         >
-          Get Alerts →
+          {userEmail ? "My Account →" : "Get Alerts →"}
         </a>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span
