@@ -189,6 +189,44 @@ export async function backfillLocations(): Promise<{ scanned: number; updated: n
   return { scanned: data.length, updated };
 }
 
+const SEVERITY_RANK: Record<Incident["severity"], number> = { low: 1, medium: 2, high: 3 };
+
+/**
+ * For a batch of alert-worthy incidents, finds which subscribers should
+ * receive which of them, grouped so each subscriber gets ONE email
+ * covering everything they qualify for rather than one email per incident.
+ *
+ * min_severity is the LOWEST severity a subscriber still wants: "high"
+ * means only high-severity incidents qualify; "low" means everything does.
+ */
+export async function getMatchingSubscribers(
+  incidents: Incident[]
+): Promise<Map<string, Incident[]>> {
+  const result = new Map<string, Incident[]>();
+  if (!supabase || incidents.length === 0) return result;
+
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select("email, categories, min_severity");
+
+  if (error) {
+    console.error("Failed to load subscribers:", error.message);
+    return result;
+  }
+
+  for (const sub of data ?? []) {
+    const threshold = SEVERITY_RANK[sub.min_severity as Incident["severity"]] ?? 3;
+    const matches = incidents.filter(
+      (i) =>
+        (sub.categories as string[]).includes(i.category) &&
+        SEVERITY_RANK[i.severity] >= threshold
+    );
+    if (matches.length > 0) result.set(sub.email, matches);
+  }
+
+  return result;
+}
+
 export async function loadRecentIncidents(days = 90): Promise<Incident[]> {
   if (!supabase) return [];
   const since = new Date(Date.now() - days * 86400000).toISOString();
