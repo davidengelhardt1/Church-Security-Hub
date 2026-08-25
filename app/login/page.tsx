@@ -1,55 +1,80 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 
-// Magic-link auth is ONE mechanism, not two: the same email link signs in
-// an existing user or creates a new one, and Supabase deliberately makes
-// both cases produce an identical response (no way to tell "no account
-// with that email" from "check your inbox") to avoid leaking which emails
-// have accounts on this site. So "Sign In" and "Sign Up" below are the
-// same call underneath - this is a UI clarity choice, not two systems.
+// Two-step: request a code, then enter it. NOT a clickable magic link.
+//
+// Why: Supabase's own docs confirm that clickable magic links get silently
+// consumed by corporate/email-provider link scanners (Microsoft Defender's
+// Safe Links, and others) BEFORE the real person clicks them - the security
+// scanner "visits" the link to check it's safe, which uses up the one-time
+// token, so the user's actual click fails with "expired" even though
+// nothing really expired. A typed code has no URL for a scanner to
+// prefetch, so this failure mode doesn't exist.
+//
+// Same underlying mechanism as before (Supabase OTP), just verified by
+// typing the code instead of clicking a link - "Sign In" and "Sign Up" are
+// still the same call underneath; see the note on that further down.
 type Mode = "signin" | "signup";
+type Stage = "email" | "code";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
+  const [stage, setStage] = useState<Stage>("email");
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [code, setCode] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "verifying" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSendCode(e: React.FormEvent) {
     e.preventDefault();
     setStatus("sending");
     setErrorMsg("");
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
+      const { error } = await supabase.auth.signInWithOtp({ email });
       if (error) throw error;
       setStatus("sent");
+      setStage("code");
     } catch (err: any) {
       setStatus("error");
       setErrorMsg(err?.message ?? "Something went wrong. Please try again.");
     }
   }
 
+  async function handleVerifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus("verifying");
+    setErrorMsg("");
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: "email",
+      });
+      if (error) throw error;
+      router.push("/preferences");
+      router.refresh();
+    } catch (err: any) {
+      setStatus("error");
+      setErrorMsg(
+        err?.message?.includes("expired") || err?.message?.includes("invalid")
+          ? "That code is wrong or expired. Double-check the email, or request a new one below."
+          : err?.message ?? "Something went wrong. Please try again."
+      );
+    }
+  }
+
   const copy =
     mode === "signin"
-      ? {
-          heading: "Sign In",
-          sub: "enter the email you used before — we'll send you a link back in",
-          button: "Send sign-in link",
-        }
-      : {
-          heading: "Sign Up",
-          sub: "enter your email to start getting high-severity incident alerts",
-          button: "Send sign-up link",
-        };
+      ? { heading: "Sign In", sub: "enter the email you used before" }
+      : { heading: "Sign Up", sub: "enter your email to start getting high-severity incident alerts" };
 
   return (
     <div
@@ -71,44 +96,44 @@ export default function LoginPage() {
           padding: 32,
         }}
       >
-        {/* Tabs - purely a UI choice for clarity; both call the same
-            signInWithOtp underneath. See note at top of file. */}
-        <div
-          style={{
-            display: "flex",
-            gap: 4,
-            marginBottom: 24,
-            background: "var(--panel-raised)",
-            borderRadius: 6,
-            padding: 4,
-          }}
-        >
-          {(["signin", "signup"] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => {
-                setMode(m);
-                setStatus("idle");
-                setErrorMsg("");
-              }}
-              className="mono"
-              style={{
-                flex: 1,
-                padding: "8px 0",
-                fontSize: 12,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                border: "none",
-                borderRadius: 4,
-                background: mode === m ? "var(--panel)" : "transparent",
-                color: mode === m ? "var(--text-primary)" : "var(--text-dim)",
-                cursor: "pointer",
-              }}
-            >
-              {m === "signin" ? "Sign In" : "Sign Up"}
-            </button>
-          ))}
-        </div>
+        {stage === "email" && (
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              marginBottom: 24,
+              background: "var(--panel-raised)",
+              borderRadius: 6,
+              padding: 4,
+            }}
+          >
+            {(["signin", "signup"] as Mode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => {
+                  setMode(m);
+                  setStatus("idle");
+                  setErrorMsg("");
+                }}
+                className="mono"
+                style={{
+                  flex: 1,
+                  padding: "8px 0",
+                  fontSize: 12,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  border: "none",
+                  borderRadius: 4,
+                  background: mode === m ? "var(--panel)" : "transparent",
+                  color: mode === m ? "var(--text-primary)" : "var(--text-dim)",
+                  cursor: "pointer",
+                }}
+              >
+                {m === "signin" ? "Sign In" : "Sign Up"}
+              </button>
+            ))}
+          </div>
+        )}
 
         <h1
           style={{
@@ -120,37 +145,14 @@ export default function LoginPage() {
             letterSpacing: "0.02em",
           }}
         >
-          {copy.heading}
+          {stage === "email" ? copy.heading : "Enter Code"}
         </h1>
-        <p
-          className="mono"
-          style={{ fontSize: 13, color: "var(--text-dim)", margin: "0 0 24px" }}
-        >
-          {copy.sub}
+        <p className="mono" style={{ fontSize: 13, color: "var(--text-dim)", margin: "0 0 24px" }}>
+          {stage === "email" ? copy.sub : `sent to ${email}`}
         </p>
 
-        {status === "sent" ? (
-          <div
-            style={{
-              padding: 16,
-              border: "1px solid var(--sev-low)",
-              background: "var(--sev-low-bg)",
-              borderRadius: 6,
-              fontSize: 14,
-              lineHeight: 1.5,
-            }}
-          >
-            Check <strong>{email}</strong> for a link. It'll expire after a
-            while, so use it soon.
-            {mode === "signup" && (
-              <div style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 13 }}>
-                Already had an account with this email? The same link signs
-                you in — nothing gets duplicated.
-              </div>
-            )}
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
+        {stage === "email" ? (
+          <form onSubmit={handleSendCode}>
             <input
               type="email"
               required
@@ -186,34 +188,91 @@ export default function LoginPage() {
                 opacity: status === "sending" ? 0.6 : 1,
               }}
             >
-              {status === "sending" ? "Sending…" : copy.button}
+              {status === "sending" ? "Sending…" : "Send code"}
             </button>
-
             {status === "error" && (
-              <p style={{ color: "var(--sev-high)", fontSize: 13, marginTop: 12 }}>
-                {errorMsg}
-              </p>
+              <p style={{ color: "var(--sev-high)", fontSize: 13, marginTop: 12 }}>{errorMsg}</p>
             )}
-
-            <p
-              className="mono"
-              style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 16 }}
-            >
-              No password to remember — every sign-in, on any device, works
-              this same way: enter your email, click the link we send.
+            <p className="mono" style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 16 }}>
+              No password to remember - we'll email you a 6-digit code.
             </p>
+          </form>
+        ) : (
+          <form onSubmit={handleVerifyCode}>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="123456"
+              disabled={status === "verifying"}
+              autoFocus
+              style={{
+                width: "100%",
+                background: "var(--panel-raised)",
+                border: "1px solid var(--hairline)",
+                borderRadius: 6,
+                padding: "12px 14px",
+                color: "var(--text-primary)",
+                fontSize: 20,
+                letterSpacing: "0.3em",
+                textAlign: "center",
+                fontFamily: "var(--font-mono)",
+                marginBottom: 12,
+              }}
+            />
+            <button
+              type="submit"
+              disabled={status === "verifying" || code.length < 6}
+              style={{
+                width: "100%",
+                background: "var(--cat-cyber)",
+                border: "none",
+                borderRadius: 6,
+                padding: "12px 14px",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: status === "verifying" ? "default" : "pointer",
+                opacity: status === "verifying" || code.length < 6 ? 0.6 : 1,
+              }}
+            >
+              {status === "verifying" ? "Verifying…" : "Verify and sign in"}
+            </button>
+            {status === "error" && (
+              <p style={{ color: "var(--sev-high)", fontSize: 13, marginTop: 12 }}>{errorMsg}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setStage("email");
+                setCode("");
+                setStatus("idle");
+                setErrorMsg("");
+              }}
+              className="mono"
+              style={{
+                width: "100%",
+                background: "transparent",
+                border: "1px solid var(--hairline)",
+                borderRadius: 6,
+                padding: "10px 14px",
+                color: "var(--text-dim)",
+                fontSize: 12,
+                marginTop: 12,
+              }}
+            >
+              Use a different email / send a new code
+            </button>
           </form>
         )}
 
         <a
           href="/"
           className="mono"
-          style={{
-            display: "inline-block",
-            marginTop: 20,
-            fontSize: 12,
-            color: "var(--text-dim)",
-          }}
+          style={{ display: "inline-block", marginTop: 20, fontSize: 12, color: "var(--text-dim)" }}
         >
           ← back to the dashboard
         </a>
