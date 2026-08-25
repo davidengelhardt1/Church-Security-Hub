@@ -75,7 +75,22 @@ export function Ribbon({
         {stat("LOW", counts.low, "var(--sev-low)")}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <a
+          href="/login"
+          className="mono"
+          style={{
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            border: "1px solid var(--hairline)",
+            borderRadius: 4,
+            padding: "6px 12px",
+            textDecoration: "none",
+          }}
+        >
+          Get Alerts →
+        </a>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span
           style={{
             width: 8,
@@ -87,6 +102,7 @@ export function Ribbon({
         <span className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
           {loading ? "syncing…" : fetchedAt ? `synced ${timeAgo(fetchedAt)}` : "not synced"}
         </span>
+        </div>
       </div>
     </header>
   );

@@ -8,9 +8,11 @@ import {
   markAlerted,
   suppressAlertsForBackfill,
   backfillLocations,
+  getMatchingSubscribers,
   supabaseEnabled,
 } from "@/lib/supabase";
 import { sendAlerts, alertsEnabled } from "@/lib/alerts";
+import { sendAlertEmail, emailAlertsEnabled } from "@/lib/email";
 import { isAlertWorthy, dedupeEvents } from "@/lib/alertFilter";
 import { attachLocations } from "@/lib/attachLocations";
 
@@ -96,13 +98,36 @@ export async function GET(request: Request) {
     reason: alertsEnabled ? "no qualifying incidents" : "ALERT_WEBHOOK_URL not set",
   };
 
+  // Two independent delivery channels sharing the same alert-worthy,
+  // deduped `pending` list: the single ops webhook (unchanged from before),
+  // and now per-subscriber email. An incident only needs to succeed on ONE
+  // channel to be marked alerted - if it fails everywhere, it stays
+  // unmarked and gets retried on the next run rather than silently dropped.
+  const successIds = new Set<string>();
+
   if (pending.length > 0 && alertsEnabled) {
     alertResult = await sendAlerts(pending);
-    // Only mark as alerted on success, so a transient webhook failure
-    // retries on the next run instead of silently dropping the alert.
     if (alertResult.sent) {
-      await markAlerted(pending.map((i) => i.id));
+      for (const i of pending) successIds.add(i.id);
     }
+  }
+
+  let subscriberCount = 0;
+  let emailsSent = 0;
+  if (pending.length > 0 && emailAlertsEnabled) {
+    const matches = await getMatchingSubscribers(pending);
+    subscriberCount = matches.size;
+    for (const [email, matchedIncidents] of matches) {
+      const result = await sendAlertEmail(email, matchedIncidents);
+      if (result.sent) {
+        emailsSent++;
+        for (const i of matchedIncidents) successIds.add(i.id);
+      }
+    }
+  }
+
+  if (successIds.size > 0) {
+    await markAlerted(Array.from(successIds));
   }
 
   return NextResponse.json({
@@ -112,8 +137,10 @@ export async function GET(request: Request) {
     alertCandidates: candidates.length,
     afterFiltering: worthy.length,
     afterEventDedupe: pending.length,
-    alertsSent: alertResult.sent ? pending.length : 0,
-    alertNote: alertResult.reason,
+    webhookSent: alertResult.sent ? pending.length : 0,
+    webhookNote: alertResult.reason,
+    matchingSubscribers: subscriberCount,
+    subscriberEmailsSent: emailsSent,
     locationsBackfilled: backfill.updated,
     ranAt: new Date().toISOString(),
   });

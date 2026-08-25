@@ -15,7 +15,9 @@
     "react-dom": "^18.3.1",
     "fast-xml-parser": "^4.4.1",
     "@supabase/supabase-js": "^2.45.0",
-    "leaflet": "^1.9.4"
+    "@supabase/ssr": "^0.5.1",
+    "leaflet": "^1.9.4",
+    "resend": "^4.0.0"
   },
   "devDependencies": {
     "typescript": "^5.5.4",
