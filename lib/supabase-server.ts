@@ -1,19 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-function firstSet(...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = process.env[n];
-    if (v && v.trim() !== "") return v;
-  }
-  return undefined;
-}
-
-const url = firstSet("NEXT_PUBLIC_SUPABASE_URL");
-const anonKey = firstSet(
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
-);
+// Static references, matching lib/supabase-browser.ts - this file only
+// runs server-side today (dynamic process.env[name] lookup would actually
+// work fine here), but keeping the pattern consistent means nobody
+// re-introduces the browser bug if this ever gets imported somewhere
+// unexpected.
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 /**
  * Server-side client that reads the user's session from cookies. Used in
