@@ -1,26 +1,16 @@
 import { createBrowserClient } from "@supabase/ssr";
 
-// Uses the PUBLIC anon/publishable key, not the secret key that
-// lib/supabase.ts uses server-side. This key is safe in browser code by
-// design - it can only do what RLS policies allow, which for this project
-// means: read/write your own subscription row, nothing else.
-//
-// Reads whichever name the Supabase-Vercel integration or manual setup
-// provided, same fallback pattern as the server-side client in
-// lib/supabase.ts.
-function firstSet(...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = process.env[n];
-    if (v && v.trim() !== "") return v;
-  }
-  return undefined;
-}
-
-const url = firstSet("NEXT_PUBLIC_SUPABASE_URL");
-const anonKey = firstSet(
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
-);
+// IMPORTANT: these must be static, literal `process.env.X` references.
+// Next.js inlines NEXT_PUBLIC_ variables into the browser bundle by
+// scanning source code at build time for exactly this pattern - it cannot
+// resolve a dynamic process.env[name] lookup, which silently evaluates to
+// undefined in the browser regardless of what's actually set in Vercel.
+// (The equivalent dynamic-lookup helper in lib/supabase.ts is fine - that
+// file only ever runs server-side, where a real process.env exists.)
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 export const authConfigured = Boolean(url && anonKey);
 

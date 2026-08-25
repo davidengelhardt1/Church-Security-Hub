@@ -1,19 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-function firstSet(...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = process.env[n];
-    if (v && v.trim() !== "") return v;
-  }
-  return undefined;
-}
-
-const url = firstSet("NEXT_PUBLIC_SUPABASE_URL");
-const anonKey = firstSet(
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
-);
+// Static references. There's real ambiguity in Next.js's own community
+// about whether middleware (Edge Runtime) supports genuinely dynamic
+// process.env[name] lookups at runtime, or whether it's subject to the
+// same build-time literal-inlining as browser code - reports differ
+// across Next.js versions. Since a static reference costs nothing and
+// removes the ambiguity entirely, use it here too rather than risk the
+// same class of bug that broke the browser client.
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 /**
  * Supabase's auth session is a short-lived token that needs refreshing.
