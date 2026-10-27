@@ -14,12 +14,14 @@ const anonKey =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 /**
+ * (Named proxy.ts because Next.js 16 renamed middleware to proxy.)
+ *
  * Supabase's auth session is a short-lived token that needs refreshing.
  * Without this middleware, sessions would silently expire mid-use instead
  * of refreshing transparently - this runs on every request and keeps the
  * cookie current before it ever gets stale enough to matter.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   if (!url || !anonKey) return response; // auth not configured - no-op

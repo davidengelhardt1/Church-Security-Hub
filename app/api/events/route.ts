@@ -2,20 +2,24 @@ import { NextResponse } from "next/server";
 import { fetchAllGdelt } from "@/lib/gdelt";
 import { fetchAllGoogleNews } from "@/lib/googlenews";
 import { fetchAllCyberFeeds } from "@/lib/feeds";
-import {
-  persistIncidents,
-  loadRecentIncidents,
-  supabaseEnabled,
-  supabaseConfigSource,
-} from "@/lib/supabase";
+import { loadRecentIncidents, supabaseEnabled } from "@/lib/supabase";
+import { cleanIncidents } from "@/lib/safe";
 import { Incident } from "@/lib/types";
 import { attachLocations } from "@/lib/attachLocations";
 
 export const dynamic = "force-dynamic"; // always fetch fresh, this is a live watch board
-// The first request (empty table) fetches every source AND writes several
-// hundred rows, so it needs headroom. Subsequent requests read from
-// Supabase and are fast.
+// If the table is empty this falls back to a live fetch of every source,
+// which needs headroom. Normal requests read from Supabase and are fast.
 export const maxDuration = 60;
+
+// This route is public, so it must not do anything expensive or write
+// anything on a visitor's behalf. Letting the CDN cache the answer for a
+// minute keeps repeated or hostile requests from reaching the database or
+// the upstream news sources. Writes happen only in /api/ingest, which
+// requires the cron secret.
+const CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+};
 
 // Wire stories get syndicated across a dozen local-news domains with the
 // exact same headline. Keep only the first (most recent) copy of each.
@@ -55,13 +59,16 @@ export async function GET() {
     if (supabaseEnabled) {
       const historical = await loadRecentIncidents();
       if (historical.length > 0) {
-        return NextResponse.json({
-          incidents: historical,
-          fetchedAt: new Date().toISOString(),
-          sources: { persistence: true, mode: "supabase" },
-        });
+        return NextResponse.json(
+          {
+            incidents: historical,
+            fetchedAt: new Date().toISOString(),
+            sources: { persistence: true, mode: "supabase" },
+          },
+          { headers: CACHE_HEADERS }
+        );
       }
-      // Fall through to a live fetch if the table is empty (first run).
+      // Fall through to a live fetch if the table is empty (before the first ingest run).
     }
 
     const [gdelt, googleNews, feeds] = await Promise.all([
@@ -70,43 +77,31 @@ export async function GET() {
       fetchAllCyberFeeds(),
     ]);
 
-    const live = attachLocations(dedupe([...googleNews, ...gdelt, ...feeds]));
-
-    // Must be awaited: Vercel freezes the function as soon as the response
-    // is sent, so a fire-and-forget write would silently never complete.
-    // This only costs latency on the first load - once the table is
-    // populated, requests are served from Supabase and skip the live fetch.
-    if (supabaseEnabled) {
-      try {
-        await persistIncidents(live);
-      } catch (e) {
-        console.error("persist error", e);
-      }
-    }
+    const live = cleanIncidents(attachLocations(dedupe([...googleNews, ...gdelt, ...feeds])));
 
     // Per-source and per-category counts are exposed here deliberately: when
     // one source silently returns nothing, this is the fastest way to see it.
     const byCategory = { physical: 0, extremism: 0, cyber: 0 };
     for (const i of live) byCategory[i.category]++;
 
-    return NextResponse.json({
-      incidents: live,
-      fetchedAt: new Date().toISOString(),
-      sources: {
-        googleNews: googleNews.length,
-        gdelt: gdelt.length,
-        cyberFeeds: feeds.length,
-        persistence: supabaseEnabled,
-        // Which env var names supplied the credentials (never the values).
-        persistenceConfig: supabaseConfigSource,
-        mode: "live",
-      },
-      byCategory,
-    });
-  } catch (err: any) {
     return NextResponse.json(
-      { error: "Failed to fetch events", detail: String(err?.message ?? err) },
-      { status: 500 }
+      {
+        incidents: live,
+        fetchedAt: new Date().toISOString(),
+        sources: {
+          googleNews: googleNews.length,
+          gdelt: gdelt.length,
+          cyberFeeds: feeds.length,
+          persistence: supabaseEnabled,
+          mode: "live",
+        },
+        byCategory,
+      },
+      { headers: CACHE_HEADERS }
     );
+  } catch (err: any) {
+    // Details go to the server log, not to the visitor.
+    console.error("events route failed:", err);
+    return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
   }
 }

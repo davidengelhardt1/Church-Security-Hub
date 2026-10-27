@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { Incident } from "./types";
+import { safeHttpUrl } from "./safe";
 
 // Separate from lib/alerts.ts (the webhook) - this is the new per-user
 // delivery channel. Resend, not Supabase's built-in email: Supabase's
@@ -45,7 +46,7 @@ function buildEmailHtml(incidents: Incident[]): string {
           <div style="font-size:15px;color:#e8eaec;margin-bottom:6px;">
             ${escapeHtml(i.title)}
           </div>
-          <a href="${escapeHtml(i.url)}" style="font-size:13px;color:#4c7ea8;text-decoration:none;">
+          <a href="${escapeHtml(safeHttpUrl(i.url) ?? "#")}" style="font-size:13px;color:#4c7ea8;text-decoration:none;">
             Read more →
           </a>
         </td>

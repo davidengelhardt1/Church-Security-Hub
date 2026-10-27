@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { Incident } from "./types";
+import { cleanIncidents } from "./safe";
 
 // The Supabase-Vercel integration provisions credentials under its own
 // variable names, which differ from the ones you'd set by hand. Accept
@@ -96,6 +97,7 @@ export async function persistIncidents(
   incidents: Incident[]
 ): Promise<{ persisted: boolean; count: number; newIds: string[]; isFirstRun: boolean }> {
   const empty = { persisted: false, count: 0, newIds: [], isFirstRun: false };
+  incidents = cleanIncidents(incidents);
   if (!supabase || incidents.length === 0) return empty;
 
   // Is the table empty? If so this is a first run / backfill, and we must
@@ -238,7 +240,7 @@ export async function loadRecentIncidents(days = 90): Promise<Incident[]> {
     .limit(1000);
 
   if (error || !data) return [];
-  return data.map(fromRow);
+  return cleanIncidents(data.map(fromRow));
 }
 
 /**
@@ -271,7 +273,7 @@ export async function getPendingAlerts(
     if (error) console.error("Alert query failed:", error.message);
     return [];
   }
-  return data.map(fromRow);
+  return cleanIncidents(data.map(fromRow));
 }
 
 /**

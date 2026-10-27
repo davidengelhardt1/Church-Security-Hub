@@ -1,4 +1,5 @@
 import { Incident } from "./types";
+import { safeHttpUrl } from "./safe";
 
 // Alerting is intentionally webhook-based rather than tied to one provider.
 // Set ALERT_WEBHOOK_URL to a Slack incoming webhook, a Discord webhook, or a
@@ -17,7 +18,7 @@ const CATEGORY_LABEL: Record<Incident["category"], string> = {
 
 function plainTextSummary(incidents: Incident[]): string {
   const lines = incidents.map(
-    (i) => `• [${CATEGORY_LABEL[i.category]}] ${i.title}\n  ${i.url}`
+    (i) => `• [${CATEGORY_LABEL[i.category]}] ${i.title}\n  ${safeHttpUrl(i.url) ?? ""}`
   );
   const header =
     incidents.length === 1
@@ -40,7 +41,7 @@ function buildPayload(incidents: Incident[], url: string): unknown {
     count: incidents.length,
     incidents: incidents.map((i) => ({
       title: i.title,
-      url: i.url,
+      url: safeHttpUrl(i.url),
       source: i.source,
       category: i.category,
       categoryLabel: CATEGORY_LABEL[i.category],

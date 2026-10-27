@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { safeInternalPath } from "@/lib/safe";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/preferences";
+  // Only same-site paths are allowed. A raw value like "@evil.com" would otherwise
+  // turn `${origin}${next}` into a link to another host.
+  const next = safeInternalPath(searchParams.get("next"), "/preferences");
 
   if (code) {
     const supabase = await createServerSupabaseClient();
