@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { cleanIncidents } from "@/lib/safe";
 import { fetchAllGdelt } from "@/lib/gdelt";
 import { fetchAllGoogleNews } from "@/lib/googlenews";
 import { fetchAllCyberFeeds } from "@/lib/feeds";
@@ -26,9 +28,21 @@ export const maxDuration = 60;
  * Can also be triggered manually to test:
  *   curl -H "Authorization: Bearer $CRON_SECRET" https://<your-app>/api/ingest
  */
+function sha256(s: string): Buffer {
+  return createHash("sha256").update(s).digest();
+}
+
 export async function GET(request: Request) {
-  const auth = request.headers.get("authorization");
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Fail closed: this route writes to the database and sends email, so it
+  // must never run without a secret. Vercel Cron sends the secret as a
+  // Bearer token automatically once CRON_SECRET is set on the project.
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    return NextResponse.json({ error: "Not configured" }, { status: 503 });
+  }
+  const auth = request.headers.get("authorization") ?? "";
+  // Compare fixed-length digests so response time does not leak the secret.
+  if (!timingSafeEqual(sha256(auth), sha256(`Bearer ${secret}`))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -45,7 +59,7 @@ export async function GET(request: Request) {
     fetchAllGoogleNews(),
     fetchAllCyberFeeds(),
   ]);
-  const all = attachLocations([...googleNews, ...gdelt, ...feeds]);
+  const all = cleanIncidents(attachLocations([...googleNews, ...gdelt, ...feeds]));
 
   const { persisted, count, newIds, isFirstRun } = await persistIncidents(all);
 

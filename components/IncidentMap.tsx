@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { Incident, Severity } from "@/lib/types";
+import { safeHttpUrl } from "@/lib/safe";
 
 // Leaflet touches `window` on import, so this component is only ever
 // mounted client-side (see app/page.tsx, which loads it via next/dynamic
@@ -113,7 +114,7 @@ export function IncidentMap({ incidents }: Props) {
              <div style="color: #8ea0ac; font-size: 12px;">${safeLoc}${
             safeLoc && inc.source ? " · " : ""
           }${escapeHtml(inc.source)}</div>
-             <a href="${escapeHtml(inc.url)}" target="_blank" rel="noopener noreferrer"
+             <a href="${escapeHtml(safeHttpUrl(inc.url) ?? "#")}" target="_blank" rel="noopener noreferrer"
                 style="color: #4c7ea8; font-size: 12px;">Open article →</a>
            </div>`
         );

@@ -21,7 +21,7 @@ happening at houses of worship elsewhere.
 
 | Layer | Choice |
 | --- | --- |
-| Framework | Next.js 14 (App Router), React, TypeScript |
+| Framework | Next.js 16 (App Router), React 19, TypeScript |
 | Hosting | Vercel (auto-deploy on push to `main`) |
 | Persistence | Supabase / Postgres — **optional** |
 | Scheduling | Vercel Cron → `/api/ingest` |
@@ -107,19 +107,39 @@ With Supabase configured, Vercel Cron hits `/api/ingest` on a schedule,
 incidents accumulate in Postgres, and the dashboard reads from that table.
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. Run `supabase/schema.sql` in the Supabase SQL editor.
+2. Run `supabase/schema.sql` in the Supabase SQL editor. It creates both tables, turns on row-level security, and sets least-privilege grants.
 3. From Supabase → Project Settings → API, copy the **Project URL** and the
    **service_role key** (not the anon key — ingestion needs write access).
 4. In Vercel → Settings → Environment Variables, add:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-   - `CRON_SECRET` — any random string (`openssl rand -hex 16`)
+   - `CRON_SECRET` — **required.** Any long random string (`openssl rand -hex 32`).
+     `/api/ingest` refuses every request until it is set, and Vercel Cron sends
+     it automatically as a Bearer token.
 5. Redeploy.
+
+The first scheduled ingest run fills an empty table without sending alerts for
+the backfilled history. The public `/api/events` route only reads; it never
+writes to the database.
 
 > **Vercel Hobby plan note:** cron jobs are limited to once per day. The
 > schedule in `vercel.json` is set to `0 6 * * *` accordingly. A more
 > frequent schedule will cause the deployment to fail with a plan-limit
 > error.
+
+## Security notes
+
+- Report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
+- The service-role key and `CRON_SECRET` are server-only. Never prefix them
+  with `NEXT_PUBLIC_`.
+- A subscription's email must equal the signed-in user's own email (enforced
+  by a row-level security policy), so alerts cannot be aimed at someone else.
+- Article links from outside feeds are accepted only as `http(s)` URLs.
+- Security headers (CSP, frame blocking, referrer policy) are set in
+  `next.config.js`. If you add a new external script, font or map tile host,
+  add it to the policy there.
+- `npm test`, `npm run typecheck` and `npm audit` run in CI on every pull
+  request, and Dependabot proposes dependency updates weekly.
 
 ---
 

@@ -1,4 +1,5 @@
 import { Incident } from "@/lib/types";
+import { safeHttpUrl } from "@/lib/safe";
 import { SeverityDot, CategoryTag } from "./Badges";
 
 function formatTimestamp(iso: string) {
@@ -22,7 +23,7 @@ export function WatchLog({ incidents }: { incidents: Incident[] }) {
       {incidents.map((inc) => (
         <a
           key={inc.id}
-          href={inc.url}
+          href={safeHttpUrl(inc.url) ?? "#"}
           target="_blank"
           rel="noopener noreferrer"
           className="watch-row"
