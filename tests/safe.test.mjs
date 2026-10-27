@@ -52,7 +52,7 @@ check("open-redirect tricks fall back", () => {
     "/\\evil.com",
     "https://evil.com",
     "javascript:alert(1)",
-    "/%0d%0aSet-Cookie:x=1".replace("%0d%0a", "\r\n"),
+    "/\r\nSet-Cookie: x=1",
     "evil.com",
   ]) {
     assert.equal(safeInternalPath(bad), "/preferences", JSON.stringify(bad));
