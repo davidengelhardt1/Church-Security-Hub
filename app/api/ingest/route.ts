@@ -5,6 +5,7 @@ import { fetchAllCyberFeeds } from "@/lib/feeds";
 import {
   persistIncidents,
   getPendingAlerts,
+  getRecentlyDispatched,
   markAlerted,
   suppressAlertsForBackfill,
   backfillLocations,
@@ -47,7 +48,8 @@ export async function GET(request: Request) {
   ]);
   const all = attachLocations([...googleNews, ...gdelt, ...feeds]);
 
-  const { persisted, count, newIds, isFirstRun } = await persistIncidents(all);
+  const { persisted, count, newIds, isFirstRun, skippedDuplicates } =
+    await persistIncidents(all);
 
   if (!persisted) {
     return NextResponse.json(
@@ -69,6 +71,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       fetched: all.length,
       stored: count,
+      skippedDuplicates,
       newIncidents: newIds.length,
       alerting:
         newIds.length > 0
@@ -84,7 +87,13 @@ export async function GET(request: Request) {
   // duplicate reporting are fine on a dashboard but wrong in a notification.
   const candidates = await getPendingAlerts(newIds, 40);
   const worthy = candidates.filter((i) => isAlertWorthy(i.title));
-  const pending = dedupeEvents(worthy).slice(0, 8);
+
+  // Compare against what was already dispatched in the last few days, not
+  // just against this run's batch, so a follow-up headline about an event we
+  // already alerted on is retired quietly rather than sent again. Kept short
+  // (3 days) because the place-name match is deliberately aggressive.
+  const recentlySent = await getRecentlyDispatched(3);
+  const pending = dedupeEvents(worthy, 0.4, recentlySent).slice(0, 8);
 
   // Anything considered but not sent gets marked anyway, so it doesn't sit
   // in the queue being re-evaluated on every future run.
@@ -127,15 +136,17 @@ export async function GET(request: Request) {
   }
 
   if (successIds.size > 0) {
-    await markAlerted(Array.from(successIds));
+    await markAlerted(Array.from(successIds), true);
   }
 
   return NextResponse.json({
     fetched: all.length,
     stored: count,
+    skippedDuplicates,
     newIncidents: newIds.length,
     alertCandidates: candidates.length,
     afterFiltering: worthy.length,
+    priorAlertsConsidered: recentlySent.length,
     afterEventDedupe: pending.length,
     webhookSent: alertResult.sent ? pending.length : 0,
     webhookNote: alertResult.reason,

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { Incident } from "./types";
+import { KnownIncident, selectNewIncidents } from "./dedupe";
 
 // The Supabase-Vercel integration provisions credentials under its own
 // variable names, which differ from the ones you'd set by hand. Accept
@@ -77,6 +78,43 @@ function fromRow(r: any): Incident {
 }
 
 /**
+ * Loads (category, headline key, publish time) for everything stored in the
+ * lookback window, so ingestion can recognise a new URL as a copy of a story
+ * we already hold. Paged because PostgREST caps a response at 1000 rows, and
+ * selects only three short columns so nothing here approaches URL limits.
+ */
+async function loadKnownIncidents(lookbackDays = 120): Promise<KnownIncident[] | null> {
+  if (!supabase) return null;
+  const since = new Date(Date.now() - lookbackDays * 86400000).toISOString();
+  const PAGE = 1000;
+  const known: KnownIncident[] = [];
+
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("incidents")
+      .select("category, title_key, published_at")
+      .gte("published_at", since)
+      .order("published_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+
+    if (error) {
+      console.error("Known-incident load failed:", error.message);
+      return null;
+    }
+    for (const r of data ?? []) {
+      known.push({
+        category: r.category,
+        titleKey: r.title_key ?? "",
+        publishedAt: r.published_at,
+      });
+    }
+    if (!data || data.length < PAGE) break;
+  }
+  return known;
+}
+
+/**
  * Inserts incidents and reports which ones we had never seen before.
  *
  * The news sources return the same rolling 90-day window on every run, so
@@ -94,8 +132,20 @@ function fromRow(r: any): Incident {
  */
 export async function persistIncidents(
   incidents: Incident[]
-): Promise<{ persisted: boolean; count: number; newIds: string[]; isFirstRun: boolean }> {
-  const empty = { persisted: false, count: 0, newIds: [], isFirstRun: false };
+): Promise<{
+  persisted: boolean;
+  count: number;
+  newIds: string[];
+  isFirstRun: boolean;
+  skippedDuplicates: number;
+}> {
+  const empty = {
+    persisted: false,
+    count: 0,
+    newIds: [],
+    isFirstRun: false,
+    skippedDuplicates: 0,
+  };
   if (!supabase || incidents.length === 0) return empty;
 
   // Is the table empty? If so this is a first run / backfill, and we must
@@ -117,14 +167,29 @@ export async function persistIncidents(
   }
   const isFirstRun = !existingRow || existingRow.length === 0;
 
+  // Drop copies of stories we already hold (same headline from another
+  // outlet, or a re-published advisory) BEFORE inserting. Ids/urls differ for
+  // these, so the primary-key conflict below can't catch them. Failing closed
+  // here is deliberate: inserting without this check is what produced
+  // duplicate alerts, so skip the run and surface the error instead.
+  const known = await loadKnownIncidents();
+  if (known === null) return empty;
+  const { fresh, skipped } = selectNewIncidents(incidents, known);
+  if (skipped > 0) console.log(`Dedupe: skipped ${skipped} duplicate headline(s)`);
+
+  if (fresh.length === 0) {
+    // Nothing new is not a failure - every item was already stored.
+    return { persisted: true, count: 0, newIds: [], isFirstRun, skippedDuplicates: skipped };
+  }
+
   // Insert in batches. These are POST bodies, not URLs, so length is not a
   // constraint here - batching just keeps individual requests reasonable.
   const CHUNK = 100;
   const newIds: string[] = [];
   let attempted = 0;
 
-  for (let i = 0; i < incidents.length; i += CHUNK) {
-    const batch = incidents.slice(i, i + CHUNK).map(toRow);
+  for (let i = 0; i < fresh.length; i += CHUNK) {
+    const batch = fresh.slice(i, i + CHUNK).map(toRow);
 
     const { data, error } = await supabase
       .from("incidents")
@@ -146,7 +211,7 @@ export async function persistIncidents(
 
   if (attempted === 0) return empty;
 
-  return { persisted: true, count: attempted, newIds, isFirstRun };
+  return { persisted: true, count: attempted, newIds, isFirstRun, skippedDuplicates: skipped };
 }
 
 /**
@@ -233,6 +298,7 @@ export async function loadRecentIncidents(days = 90): Promise<Incident[]> {
   const { data, error } = await supabase
     .from("incidents")
     .select("*")
+    .is("duplicate_of", null)
     .gte("published_at", since)
     .order("published_at", { ascending: false })
     .limit(1000);
@@ -262,6 +328,7 @@ export async function getPendingAlerts(
     .from("incidents")
     .select("*")
     .eq("alerted", false)
+    .is("duplicate_of", null)
     .eq("severity", "high")
     .gte("published_at", since)
     .order("published_at", { ascending: false })
@@ -277,19 +344,51 @@ export async function getPendingAlerts(
 /**
  * Marks incidents as alerted so they're never dispatched twice.
  *
+ * `sent` distinguishes incidents that actually went out (webhook/email) from
+ * ones merely retired from the queue (filtered or deduped). Only the former
+ * get `alert_sent_at`, which is what the cross-run duplicate check compares
+ * new candidates against.
+ *
  * IDs go one per request rather than as an `.in()` list: they embed full
  * article URLs, and batching them overflows the maximum request URL length.
  * The alert cap (8 per run) keeps this to a handful of small requests.
  */
-export async function markAlerted(ids: string[]) {
+export async function markAlerted(ids: string[], sent = false) {
   if (!supabase || ids.length === 0) return;
+  const now = new Date().toISOString();
   for (const id of ids) {
     const { error } = await supabase
       .from("incidents")
-      .update({ alerted: true, alerted_at: new Date().toISOString() })
+      .update(
+        sent
+          ? { alerted: true, alerted_at: now, alert_sent_at: now }
+          : { alerted: true, alerted_at: now }
+      )
       .eq("id", id);
     if (error) console.error("Failed to mark alerted:", error.message);
   }
+}
+
+/**
+ * Incidents actually dispatched recently. New candidates are compared against
+ * these so a story that is re-reported under a different headline on a later
+ * day doesn't trigger a second alert for the same event.
+ */
+export async function getRecentlyDispatched(days = 7): Promise<Incident[]> {
+  if (!supabase) return [];
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const { data, error } = await supabase
+    .from("incidents")
+    .select("*")
+    .not("alert_sent_at", "is", null)
+    .gte("alert_sent_at", since)
+    .order("alert_sent_at", { ascending: false })
+    .limit(200);
+  if (error || !data) {
+    if (error) console.error("Recent dispatch query failed:", error.message);
+    return [];
+  }
+  return data.map(fromRow);
 }
 
 /**

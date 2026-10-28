@@ -54,3 +54,61 @@ alter table incidents enable row level security;
 alter table incidents add column if not exists location_name text;
 alter table incidents add column if not exists lat double precision;
 alter table incidents add column if not exists lng double precision;
+
+-- ---------------------------------------------------------------------
+-- Migration: duplicate suppression. Google News returns one URL per outlet,
+-- so one story arrives as many rows with different ids but the same
+-- headline, and the CIS feed re-publishes advisories under new numbers.
+--
+--   title_key       normalized headline, computed by Postgres. lib/dedupe.ts
+--                   titleKey() must produce the same value.
+--   duplicate_of    id of the canonical row when this row is a copy. Rows are
+--                   flagged rather than deleted so alert history is preserved;
+--                   the board and alert queue read only `duplicate_of is null`.
+--   alert_sent_at   set only when an alert actually went out (webhook/email),
+--                   as opposed to `alerted`, which also covers items retired
+--                   from the queue. Later runs compare candidates against it.
+-- ---------------------------------------------------------------------
+alter table incidents
+  add column if not exists title_key text generated always as (
+    btrim(regexp_replace(lower(regexp_replace(title, '[^a-zA-Z0-9\s]', '', 'g')), '\s+', ' ', 'g'))
+  ) stored,
+  add column if not exists duplicate_of text,
+  add column if not exists alert_sent_at timestamptz;
+
+create index if not exists incidents_dedupe_idx
+  on incidents (category, title_key, published_at);
+create index if not exists incidents_duplicate_of_idx
+  on incidents (duplicate_of) where duplicate_of is not null;
+create index if not exists incidents_alert_sent_idx
+  on incidents (alert_sent_at) where alert_sent_at is not null;
+
+-- One-time backfill for rows that predate this migration. Same category +
+-- same headline within 14 days (news) / 1 day (cyber advisories, which reuse
+-- titles for genuinely different bulletins) = same story. The canonical row
+-- prefers one already alerted, then the earliest published.
+with ordered as (
+  select id, category, title_key, published_at, alerted,
+         case when category = 'cyber' then interval '1 day' else interval '14 days' end as win,
+         published_at - lag(published_at) over (
+           partition by category, title_key order by published_at, id
+         ) as gap
+  from incidents
+), clustered as (
+  select *,
+         sum(case when gap is null or gap > win then 1 else 0 end) over (
+           partition by category, title_key order by published_at, id
+         ) as cid
+  from ordered
+), ranked as (
+  select id,
+         first_value(id) over (
+           partition by category, title_key, cid
+           order by alerted desc, published_at, id
+         ) as canon
+  from clustered
+)
+update incidents i
+set duplicate_of = r.canon
+from ranked r
+where i.id = r.id and r.canon <> i.id;

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:alerts": "esbuild lib/alertFilter.ts --bundle --format=esm --platform=node --outfile=.test-build/alertFilter.mjs && node tests/alert-filter.test.mjs"
+    "test:alerts": "esbuild lib/alertFilter.ts --bundle --format=esm --platform=node --outfile=.test-build/alertFilter.mjs && node tests/alert-filter.test.mjs",
+    "test:dedupe": "esbuild lib/dedupe.ts --bundle --format=esm --platform=node --outfile=.test-build/dedupe.mjs && esbuild lib/alertFilter.ts --bundle --format=esm --platform=node --outfile=.test-build/alertFilter.mjs && node tests/dedupe.test.mjs"
   },
   "dependencies": {
     "next": "14.2.35",

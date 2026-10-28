@@ -148,21 +148,41 @@ function sharesPlace(a: Set<string>, b: Set<string>): boolean {
  * team gets one notification and can open the board for the full picture,
  * which is much better than seven texts about one shooting.
  */
-export function dedupeEvents(incidents: Incident[], threshold = 0.4): Incident[] {
-  const kept: { incident: Incident; tokens: Set<string>; places: Set<string> }[] = [];
+export function dedupeEvents(
+  incidents: Incident[],
+  threshold = 0.4,
+  alreadySent: Incident[] = []
+): Incident[] {
+  type Entry = { incident: Incident; tokens: Set<string>; places: Set<string> };
+  const entryFor = (incident: Incident): Entry => ({
+    incident,
+    tokens: signatureTokens(incident.title),
+    places: properNouns(incident.title),
+  });
+
+  // Incidents dispatched on earlier runs seed the comparison set but are
+  // never returned: they exist so a story re-reported tomorrow, under a
+  // different headline, is recognised as already alerted instead of being
+  // sent as if it were new. Without this, each cron run only compared
+  // candidates against each other, so the same event could alert daily.
+  const kept: Entry[] = alreadySent.map(entryFor);
+  const fresh: Incident[] = [];
 
   for (const inc of incidents) {
-    const tokens = signatureTokens(inc.title);
-    const places = properNouns(inc.title);
+    const entry = entryFor(inc);
 
     const duplicate = kept.some(
       (k) =>
         k.incident.category === inc.category &&
-        (overlap(tokens, k.tokens) >= threshold || sharesPlace(places, k.places))
+        (overlap(entry.tokens, k.tokens) >= threshold ||
+          sharesPlace(entry.places, k.places))
     );
 
-    if (!duplicate) kept.push({ incident: inc, tokens, places });
+    if (!duplicate) {
+      kept.push(entry);
+      fresh.push(inc);
+    }
   }
 
-  return kept.map((k) => k.incident);
+  return fresh;
 }

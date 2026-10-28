@@ -10,6 +10,7 @@ import {
 } from "@/lib/supabase";
 import { Incident } from "@/lib/types";
 import { attachLocations } from "@/lib/attachLocations";
+import { titleKey } from "@/lib/dedupe";
 
 export const dynamic = "force-dynamic"; // always fetch fresh, this is a live watch board
 // The first request (empty table) fetches every source AND writes several
@@ -19,13 +20,9 @@ export const maxDuration = 60;
 
 // Wire stories get syndicated across a dozen local-news domains with the
 // exact same headline. Keep only the first (most recent) copy of each.
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+// (The stored path is deduped at ingest and via `duplicate_of`; this covers
+// the live-fetch fallback used when the table is empty.)
+const normalizeTitle = titleKey;
 
 function dedupe(incidents: Incident[]): Incident[] {
   const byId = new Map<string, Incident>();
