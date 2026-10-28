@@ -292,7 +292,7 @@ export async function getMatchingSubscribers(
   return result;
 }
 
-export async function loadRecentIncidents(days = 90): Promise<Incident[]> {
+export async function loadRecentIncidents(days = 30): Promise<Incident[]> {
   if (!supabase) return [];
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const { data, error } = await supabase
